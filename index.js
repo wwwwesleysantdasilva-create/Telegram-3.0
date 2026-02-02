@@ -4,7 +4,10 @@ import fs from "fs";
 
 /* ================= CONFIG FIXA ================= */
 
-const BOT_TOKEN = "8579716346:AAEDahqK3E9Yub74sUr9Col6aBIyjd0BQSQ";
+const BOT_TOKEN = process.env.BOT_TOKEN;
+if (!BOT_TOKEN) {
+  throw new Error("BOT_TOKEN não definido");
+}
 const MASTER_ADMIN = 8235876348;
 const LOG_GROUP_ID = -5164103528;
 
