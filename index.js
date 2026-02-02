@@ -8,6 +8,7 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 if (!BOT_TOKEN) {
   throw new Error("BOT_TOKEN não definido");
 }
+
 const MASTER_ADMIN = 8235876348;
 const LOG_GROUP_ID = -5164103528;
 
@@ -83,8 +84,10 @@ const logTG = (text) => {
 
 function isAdmin(userId, cb) {
   if (userId === MASTER_ADMIN) return cb(true);
-  db.get(`SELECT user_id FROM admins WHERE user_id = ?`, [userId], (_, row) =>
-    cb(!!row)
+  db.get(
+    `SELECT user_id FROM admins WHERE user_id = ?`,
+    [userId],
+    (_, row) => cb(!!row)
   );
 }
 
@@ -123,62 +126,68 @@ bot.onText(/\/start/, (msg) => {
 /* ================= PAINEL ADMIN ================= */
 
 bot.onText(/\/admin/, (msg) => {
-  if (msg.from.id !== MASTER_ADMIN) return;
+  isAdmin(msg.from.id, (ok) => {
+    if (!ok) return;
 
-  bot.sendMessage(msg.chat.id, "Painel Admin:", {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "➕ Add Admin", callback_data: "add_admin" }],
-        [{ text: "➖ Remover Admin", callback_data: "del_admin" }],
-        [{ text: "🔑 Key Inject", callback_data: "gen_inject" }],
-        [{ text: "🔑 Key Pharmacy", callback_data: "gen_pharmacy" }],
-        [{ text: "🔑 Key Basic", callback_data: "gen_basic" }]
-      ]
-    }
+    bot.sendMessage(msg.chat.id, "📊 Painel Admin", {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "➕ Add Admin", callback_data: "add_admin" }],
+          [{ text: "➖ Remover Admin", callback_data: "del_admin" }],
+          [{ text: "🔑 Key Inject", callback_data: "gen_inject" }],
+          [{ text: "🔑 Key Pharmacy", callback_data: "gen_pharmacy" }],
+          [{ text: "🔑 Key Basic", callback_data: "gen_basic" }]
+        ]
+      }
+    });
   });
 });
 
 /* ================= CALLBACKS ================= */
 
 bot.on("callback_query", (q) => {
-  const id = q.from.id;
+  const userId = q.from.id;
 
-  if (id !== MASTER_ADMIN) return;
+  isAdmin(userId, (ok) => {
+    if (!ok) return;
 
-  if (q.data === "add_admin") {
-    bot.sendMessage(q.message.chat.id, "Envie o ID do novo admin:");
-    bot.once("message", (m) => {
-      const uid = Number(m.text);
-      if (!uid) return;
-      db.run(`INSERT OR IGNORE INTO admins VALUES (?)`, [uid]);
-      bot.sendMessage(m.chat.id, "✅ Admin adicionado.");
-    });
-    return;
-  }
+    const chatId = q.message.chat.id;
 
-  if (q.data === "del_admin") {
-    bot.sendMessage(q.message.chat.id, "Envie o ID do admin para remover:");
-    bot.once("message", (m) => {
-      const uid = Number(m.text);
-      if (!uid || uid === MASTER_ADMIN) return;
-      db.run(`DELETE FROM admins WHERE user_id = ?`, [uid]);
-      bot.sendMessage(m.chat.id, "❌ Admin removido.");
-    });
-    return;
-  }
+    if (q.data === "add_admin") {
+      bot.sendMessage(chatId, "Envie o ID do novo admin:");
+      bot.once("message", (m) => {
+        const uid = Number(m.text);
+        if (!uid) return;
+        db.run(`INSERT OR IGNORE INTO admins VALUES (?)`, [uid]);
+        bot.sendMessage(chatId, "✅ Admin adicionado.");
+      });
+      return;
+    }
 
-  const product = q.data.replace("gen_", "");
-  const p = PRODUCTS[product];
-  if (!p) return;
+    if (q.data === "del_admin") {
+      bot.sendMessage(chatId, "Envie o ID do admin para remover:");
+      bot.once("message", (m) => {
+        const uid = Number(m.text);
+        if (!uid || uid === MASTER_ADMIN) return;
+        db.run(`DELETE FROM admins WHERE user_id = ?`, [uid]);
+        bot.sendMessage(chatId, "❌ Admin removido.");
+      });
+      return;
+    }
 
-  const key = generateKey(p.prefix);
+    const product = q.data.replace("gen_", "");
+    const p = PRODUCTS[product];
+    if (!p) return;
 
-  db.run(
-    `INSERT INTO keys VALUES (?, ?, 0, NULL, ?)`,
-    [key, product, now()]
-  );
+    const key = generateKey(p.prefix);
 
-  bot.sendMessage(q.message.chat.id, `🔑 ${p.name}\n\n${key}`);
+    db.run(
+      `INSERT INTO keys VALUES (?, ?, 0, NULL, ?)`,
+      [key, product, now()]
+    );
+
+    bot.sendMessage(chatId, `🔑 ${p.name}\n\n${key}`);
+  });
 });
 
 /* ================= VALIDAR KEY ================= */
