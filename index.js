@@ -3,36 +3,32 @@ import fs from "fs";
 
 // ===== CONFIG =====
 const TOKEN = process.env.BOT_TOKEN;
-const ADMIN_ID = 8235876348; // teu ID
+if (!TOKEN) throw new Error("BOT_TOKEN não definido");
+
+const MASTER_ADMIN = 8235876348;
 const LOG_GROUP_ID = -5164103528;
 
-const bot = new TelegramBot(TOKEN, {
-  polling: {
-    autoStart: true,
-    params: { timeout: 10 }
-  }
-});
+const bot = new TelegramBot(TOKEN, { polling: true });
 
 // ===== STORAGE =====
-let waitingGen = {}; // controle de estado
+let waitingGen = {};
+let admins = new Set([MASTER_ADMIN]);
+
+if (fs.existsSync("./admins.json")) {
+  admins = new Set(JSON.parse(fs.readFileSync("./admins.json")));
+}
+
+function saveAdmins() {
+  fs.writeFileSync("./admins.json", JSON.stringify([...admins]));
+}
 
 // ===== UTIL =====
-function logEvent(type, userId, info = {}) {
-  const log = {
-    time: new Date().toISOString(),
-    type,
-    userId,
-    info
-  };
+function isAdmin(id) {
+  return admins.has(id);
+}
 
-  const text =
-`📊 <b>LOG</b>
-🕒 <code>${log.time}</code>
-📌 <b>${type}</b>
-👤 <code>${userId}</code>
-📦 <pre>${JSON.stringify(info, null, 2)}</pre>`;
-
-  bot.sendMessage(LOG_GROUP_ID, text, { parse_mode: "HTML" }).catch(() => {});
+function now() {
+  return new Date().toLocaleString("pt-BR");
 }
 
 function generateKey(prefix) {
@@ -44,50 +40,94 @@ function generateKey(prefix) {
   return `${prefix}-${code}`;
 }
 
+function logKey(key, data) {
+  const line =
+`DATA: ${now()}
+KEY: ${key}
+USER: ${data.userId}
+CHAT: ${data.chatId}
+PACK: ${data.pack}
+COMANDO: ${data.command}
+----------------------\n`;
+
+  fs.appendFileSync(`./logs_${key}.log`, line);
+
+  bot.sendMessage(
+    LOG_GROUP_ID,
+    `📊 <b>LOG KEY</b>\n<pre>${line}</pre>`,
+    { parse_mode: "HTML" }
+  ).catch(() => {});
+}
+
 // ===== START =====
 bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(msg.chat.id,
+  bot.sendMessage(
+    msg.chat.id,
 `🤖 <b>WW BOT RESGATE</b>
 
 🔑 Envie sua key para validar
-🛠 Use /admin se for administrador`,
-  { parse_mode: "HTML" }
+🛠 /admin para painel`,
+    { parse_mode: "HTML" }
   );
 });
 
-// ===== ADMIN =====
+// ===== ADMIN PANEL =====
 bot.onText(/\/admin/, (msg) => {
-  if (msg.from.id !== ADMIN_ID) return;
+  if (!isAdmin(msg.from.id)) return;
 
-  bot.sendMessage(msg.chat.id,
+  bot.sendMessage(
+    msg.chat.id,
 `🛠 <b>Painel Admin</b>
 
-🔹 Gerar Inject
-🔹 Gerar Pharmacy
-🔹 Gerar Basic
+🔑 /gen inject
+🔑 /gen pharmacy
+🔑 /gen basic
 
-Use:
-<code>/gen inject</code>
-<code>/gen pharmacy</code>
-<code>/gen basic</code>`,
-  { parse_mode: "HTML" }
+👤 /addadmin ID
+👤 /deladmin ID
+📋 /listadmins
+
+📊 /logs KEY`,
+    { parse_mode: "HTML" }
   );
 });
 
-// ===== GERAR =====
-bot.onText(/\/gen (.+)/, (msg, match) => {
-  if (msg.from.id !== ADMIN_ID) return;
+// ===== ADMIN MANAGEMENT =====
+bot.onText(/\/addadmin (\d+)/, (msg, match) => {
+  if (msg.from.id !== MASTER_ADMIN) return;
 
-  const pack = match[1];
-  if (!["inject", "pharmacy", "basic"].includes(pack)) {
-    return bot.sendMessage(msg.chat.id, "❌ Pack inválido");
-  }
+  admins.add(Number(match[1]));
+  saveAdmins();
+  bot.sendMessage(msg.chat.id, "✅ Admin adicionado");
+});
 
-  waitingGen[msg.from.id] = pack;
+bot.onText(/\/deladmin (\d+)/, (msg, match) => {
+  if (msg.from.id !== MASTER_ADMIN) return;
 
-  bot.sendMessage(msg.chat.id,
-`🔢 Quantas keys deseja gerar? (1 a 100)`,
-  { parse_mode: "HTML" }
+  admins.delete(Number(match[1]));
+  saveAdmins();
+  bot.sendMessage(msg.chat.id, "❌ Admin removido");
+});
+
+bot.onText(/\/listadmins/, (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+
+  bot.sendMessage(
+    msg.chat.id,
+    `<pre>${[...admins].join("\n")}</pre>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// ===== GERAR KEYS =====
+bot.onText(/\/gen (inject|pharmacy|basic)/, (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+
+  waitingGen[msg.from.id] = match[1];
+
+  bot.sendMessage(
+    msg.chat.id,
+    "🔢 Quantas keys deseja gerar? (1 a 100)"
   );
 });
 
@@ -95,9 +135,9 @@ bot.onText(/\/gen (.+)/, (msg, match) => {
 bot.on("message", (msg) => {
   const userId = msg.from.id;
   if (!waitingGen[userId]) return;
-  if (!msg.text.match(/^\d+$/)) return;
+  if (!/^\d+$/.test(msg.text)) return;
 
-  const qty = parseInt(msg.text);
+  const qty = Number(msg.text);
   if (qty < 1 || qty > 100) {
     return bot.sendMessage(msg.chat.id, "❌ Quantidade inválida");
   }
@@ -105,36 +145,53 @@ bot.on("message", (msg) => {
   const pack = waitingGen[userId];
   delete waitingGen[userId];
 
-  let prefix =
+  const prefix =
     pack === "inject" ? "INJECT" :
-    pack === "pharmacy" ? "PHARM" : "BASIC";
+    pack === "pharmacy" ? "PHARM" :
+    "BASIC";
 
   let keys = [];
   for (let i = 0; i < qty; i++) {
-    keys.push(generateKey(prefix));
+    const key = generateKey(prefix);
+    keys.push(key);
+
+    logKey(key, {
+      userId,
+      chatId: msg.chat.id,
+      pack,
+      command: "/gen"
+    });
   }
 
-  const formatted =
+  bot.sendMessage(
+    msg.chat.id,
 `✅ <b>Keys geradas (${pack.toUpperCase()})</b>
 
-<pre>${keys.join("\n")}</pre>`;
-
-  bot.sendMessage(msg.chat.id, formatted, { parse_mode: "HTML" });
-
-  logEvent("GERACAO_KEYS", userId, { pack, qty });
-});
-
-// ===== LOGS =====
-bot.onText(/\/logs/, (msg) => {
-  if (msg.from.id !== ADMIN_ID) return;
-
-  bot.sendMessage(msg.chat.id,
-`📊 <b>Últimos logs</b>
-
-Os logs completos são enviados
-automaticamente no grupo.`,
-  { parse_mode: "HTML" }
+<pre>${keys.join("\n")}</pre>`,
+    { parse_mode: "HTML" }
   );
 });
 
-console.log("🤖 BOT FINAL rodando...");
+// ===== LOGS POR KEY =====
+bot.onText(/\/logs (.+)/, (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+
+  const key = match[1];
+  const file = `./logs_${key}.log`;
+
+  if (!fs.existsSync(file)) {
+    return bot.sendMessage(msg.chat.id, "❌ Nenhum log encontrado");
+  }
+
+  const content = fs.readFileSync(file, "utf8");
+
+  bot.sendMessage(
+    msg.chat.id,
+`📊 <b>Logs da key ${key}</b>
+
+<pre>${content}</pre>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+console.log("🤖 WW BOT RESGATE rodando...");
