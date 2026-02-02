@@ -65,17 +65,23 @@ Envie sua <b>KEY</b> para liberar o acesso.`,
 
 bot.onText(/\/servico/, (msg) => {
   isAdmin(msg.from.id, (ok) => {
-    if (!ok) return;
+    if (!ok) {
+      bot.sendMessage(msg.chat.id, "⛔ Você não tem permissão.");
+      return;
+    }
+
+    const keyboard = [
+      [{ text: "🔑 Gerar Keys", callback_data: "gen_menu" }],
+      [{ text: "📊 Logs", callback_data: "logs_menu" }]
+    ];
+
+    if (msg.from.id === MASTER_ADMIN) {
+      keyboard.push([{ text: "➕ Add Admin", callback_data: "add_admin" }]);
+    }
 
     bot.sendMessage(msg.chat.id, "🛠 <b>Painel de Serviço</b>", {
       parse_mode: "HTML",
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "🔑 Gerar Keys", callback_data: "gen_menu" }],
-          [{ text: "📊 Logs", callback_data: "logs_menu" }],
-          [{ text: "➕ Add Admin", callback_data: "add_admin" }]
-        ]
-      }
+      reply_markup: { inline_keyboard: keyboard }
     });
   });
 });
@@ -109,37 +115,47 @@ bot.on("callback_query", (q) => {
       return bot.sendMessage(chat, "Quantas keys deseja gerar?");
     }
 
-    if (q.data === "add_admin") {
+    if (q.data === "add_admin" && id === MASTER_ADMIN) {
       state[id] = { step: "addadmin" };
       return bot.sendMessage(chat, "Envie o ID do novo admin:");
     }
 
     if (q.data === "logs_menu") {
-      db.all(`SELECT rowid, date FROM logs ORDER BY rowid DESC LIMIT 10`, (_, rows) => {
-        if (!rows.length)
-          return bot.sendMessage(chat, "Nenhum log encontrado.");
+      db.all(
+        `SELECT rowid, date FROM logs ORDER BY rowid DESC LIMIT 10`,
+        (_, rows) => {
+          if (!rows.length)
+            return bot.sendMessage(chat, "Nenhum log encontrado.");
 
-        bot.sendMessage(chat, "Selecione um log:", {
-          reply_markup: {
-            inline_keyboard: rows.map(r => [
-              { text: r.date, callback_data: "log_" + r.rowid }
-            ])
-          }
-        });
-      });
+          bot.sendMessage(chat, "Selecione um log:", {
+            reply_markup: {
+              inline_keyboard: rows.map(r => [
+                { text: r.date, callback_data: "log_" + r.rowid }
+              ])
+            }
+          });
+        }
+      );
     }
 
     if (q.data.startsWith("log_")) {
-      db.get(`SELECT * FROM logs WHERE rowid=?`, [q.data.replace("log_", "")], (_, l) => {
-        if (!l) return;
-        bot.sendMessage(chat,
-`📊 LOG
+      db.get(
+        `SELECT * FROM logs WHERE rowid=?`,
+        [q.data.replace("log_", "")],
+        (_, l) => {
+          if (!l) return;
+          bot.sendMessage(
+            chat,
+`📊 <b>LOG</b>
 
-KEY: ${l.key}
+KEY: <code>${l.key}</code>
 PRODUTO: ${l.product}
-USUÁRIO: ${l.user_id}
-DATA: ${l.date}`);
-      });
+USUÁRIO: <code>${l.user_id}</code>
+DATA: ${l.date}`,
+            { parse_mode: "HTML" }
+          );
+        }
+      );
     }
   });
 });
@@ -153,6 +169,8 @@ bot.on("message", async (msg) => {
 
   /* ===== ADD ADMIN ===== */
   if (state[id]?.step === "addadmin") {
+    if (id !== MASTER_ADMIN) return;
+
     const uid = Number(text);
     if (!uid) {
       bot.sendMessage(msg.chat.id, "❌ ID inválido.");
@@ -187,8 +205,9 @@ bot.on("message", async (msg) => {
       db.run(`INSERT INTO keys VALUES (?, ?, 0)`, [key, prefix]);
     }
 
-    bot.sendMessage(msg.chat.id,
-`✅ Keys geradas (${prefix})
+    bot.sendMessage(
+      msg.chat.id,
+`✅ <b>Keys geradas (${prefix})</b>
 
 <pre>${keys.join("\n")}</pre>`,
       { parse_mode: "HTML" }
@@ -223,10 +242,13 @@ bot.on("message", async (msg) => {
       nowBR()
     ]);
 
-    bot.sendMessage(msg.chat.id,
-`✅ Acesso liberado!
+    bot.sendMessage(
+      msg.chat.id,
+`✅ <b>Acesso liberado!</b>
 
-${invite.invite_link}`);
+${invite.invite_link}`,
+      { parse_mode: "HTML" }
+    );
   });
 });
 
