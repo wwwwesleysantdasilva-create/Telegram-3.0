@@ -1,197 +1,184 @@
 import TelegramBot from "node-telegram-bot-api";
+import sqlite3 from "sqlite3";
 import fs from "fs";
 
-// ===== CONFIG =====
-const TOKEN = process.env.BOT_TOKEN;
-if (!TOKEN) throw new Error("BOT_TOKEN não definido");
+/* ================= CONFIG ================= */
 
+const BOT_TOKEN = process.env.BOT_TOKEN;
 const MASTER_ADMIN = 8235876348;
 const LOG_GROUP_ID = -5164103528;
 
-const bot = new TelegramBot(TOKEN, { polling: true });
+const PRODUCTS = {
+  inject: { name: "Inject", group: -1003801083393, prefix: "INJECT" },
+  pharmacy: { name: "Pharmacy", group: -1003705721917, prefix: "PHARM" },
+  basic: { name: "Basic", group: -1003899281136, prefix: "BASIC" }
+};
 
-// ===== STORAGE =====
-let waitingGen = {};
-let admins = new Set([MASTER_ADMIN]);
+const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+const db = new sqlite3.Database("./database.sqlite");
 
-if (fs.existsSync("./admins.json")) {
-  admins = new Set(JSON.parse(fs.readFileSync("./admins.json")));
+let state = {};
+
+/* ================= DATABASE ================= */
+
+db.serialize(() => {
+  db.run(`CREATE TABLE IF NOT EXISTS admins (user_id INTEGER UNIQUE)`);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      time TEXT,
+      type TEXT,
+      user_id INTEGER,
+      info TEXT
+    )
+  `);
+});
+
+/* ================= HELPERS ================= */
+
+const now = () => new Date().toLocaleString("pt-BR");
+
+function isAdmin(id, cb) {
+  if (id === MASTER_ADMIN) return cb(true);
+  db.get(`SELECT user_id FROM admins WHERE user_id = ?`, [id], (_, r) => cb(!!r));
 }
 
-function saveAdmins() {
-  fs.writeFileSync("./admins.json", JSON.stringify([...admins]));
-}
-
-// ===== UTIL =====
-function isAdmin(id) {
-  return admins.has(id);
-}
-
-function now() {
-  return new Date().toLocaleString("pt-BR");
+function saveLog(type, userId, info) {
+  db.run(
+    `INSERT INTO logs (time, type, user_id, info) VALUES (?, ?, ?, ?)`,
+    [now(), type, userId, JSON.stringify(info)]
+  );
 }
 
 function generateKey(prefix) {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let code = "";
-  for (let i = 0; i < 6; i++) {
-    code += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return `${prefix}-${code}`;
+  return `${prefix}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 }
 
-function logKey(key, data) {
-  const line =
-`DATA: ${now()}
-KEY: ${key}
-USER: ${data.userId}
-CHAT: ${data.chatId}
-PACK: ${data.pack}
-COMANDO: ${data.command}
-----------------------\n`;
+/* ================= START ================= */
 
-  fs.appendFileSync(`./logs_${key}.log`, line);
-
-  bot.sendMessage(
-    LOG_GROUP_ID,
-    `📊 <b>LOG KEY</b>\n<pre>${line}</pre>`,
-    { parse_mode: "HTML" }
-  ).catch(() => {});
-}
-
-// ===== START =====
 bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(
-    msg.chat.id,
-`🤖 <b>WW BOT RESGATE</b>
-
-🔑 Envie sua key para validar
-🛠 /admin para painel`,
-    { parse_mode: "HTML" }
-  );
+  bot.sendMessage(msg.chat.id, "🤖 Bot ativo.\n\nEnvie sua key para validar.");
 });
 
-// ===== ADMIN PANEL =====
-bot.onText(/\/admin/, (msg) => {
-  if (!isAdmin(msg.from.id)) return;
+/* ================= SERVIÇO ================= */
 
-  bot.sendMessage(
-    msg.chat.id,
-`🛠 <b>Painel Admin</b>
+bot.onText(/\/serviço/, (msg) => {
+  isAdmin(msg.from.id, (ok) => {
+    if (!ok) return;
 
-🔑 /gen inject
-🔑 /gen pharmacy
-🔑 /gen basic
-
-👤 /addadmin ID
-👤 /deladmin ID
-📋 /listadmins
-
-📊 /logs KEY`,
-    { parse_mode: "HTML" }
-  );
-});
-
-// ===== ADMIN MANAGEMENT =====
-bot.onText(/\/addadmin (\d+)/, (msg, match) => {
-  if (msg.from.id !== MASTER_ADMIN) return;
-
-  admins.add(Number(match[1]));
-  saveAdmins();
-  bot.sendMessage(msg.chat.id, "✅ Admin adicionado");
-});
-
-bot.onText(/\/deladmin (\d+)/, (msg, match) => {
-  if (msg.from.id !== MASTER_ADMIN) return;
-
-  admins.delete(Number(match[1]));
-  saveAdmins();
-  bot.sendMessage(msg.chat.id, "❌ Admin removido");
-});
-
-bot.onText(/\/listadmins/, (msg) => {
-  if (!isAdmin(msg.from.id)) return;
-
-  bot.sendMessage(
-    msg.chat.id,
-    `<pre>${[...admins].join("\n")}</pre>`,
-    { parse_mode: "HTML" }
-  );
-});
-
-// ===== GERAR KEYS =====
-bot.onText(/\/gen (inject|pharmacy|basic)/, (msg, match) => {
-  if (!isAdmin(msg.from.id)) return;
-
-  waitingGen[msg.from.id] = match[1];
-
-  bot.sendMessage(
-    msg.chat.id,
-    "🔢 Quantas keys deseja gerar? (1 a 100)"
-  );
-});
-
-// ===== QUANTIDADE =====
-bot.on("message", (msg) => {
-  const userId = msg.from.id;
-  if (!waitingGen[userId]) return;
-  if (!/^\d+$/.test(msg.text)) return;
-
-  const qty = Number(msg.text);
-  if (qty < 1 || qty > 100) {
-    return bot.sendMessage(msg.chat.id, "❌ Quantidade inválida");
-  }
-
-  const pack = waitingGen[userId];
-  delete waitingGen[userId];
-
-  const prefix =
-    pack === "inject" ? "INJECT" :
-    pack === "pharmacy" ? "PHARM" :
-    "BASIC";
-
-  let keys = [];
-  for (let i = 0; i < qty; i++) {
-    const key = generateKey(prefix);
-    keys.push(key);
-
-    logKey(key, {
-      userId,
-      chatId: msg.chat.id,
-      pack,
-      command: "/gen"
+    bot.sendMessage(msg.chat.id, "🛠 Painel de Serviço", {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🔑 Gerar Key", callback_data: "svc_gen" }],
+          [{ text: "📊 Logss", callback_data: "svc_logs" }]
+        ]
+      }
     });
-  }
-
-  bot.sendMessage(
-    msg.chat.id,
-`✅ <b>Keys geradas (${pack.toUpperCase()})</b>
-
-<pre>${keys.join("\n")}</pre>`,
-    { parse_mode: "HTML" }
-  );
+  });
 });
 
-// ===== LOGS POR KEY =====
-bot.onText(/\/logs (.+)/, (msg, match) => {
-  if (!isAdmin(msg.from.id)) return;
+/* ================= ADD ADMIN ================= */
 
-  const key = match[1];
-  const file = `./logs_${key}.log`;
+bot.onText(/\/addadmin/, (msg) => {
+  if (msg.from.id !== MASTER_ADMIN) return;
 
-  if (!fs.existsSync(file)) {
-    return bot.sendMessage(msg.chat.id, "❌ Nenhum log encontrado");
-  }
-
-  const content = fs.readFileSync(file, "utf8");
-
-  bot.sendMessage(
-    msg.chat.id,
-`📊 <b>Logs da key ${key}</b>
-
-<pre>${content}</pre>`,
-    { parse_mode: "HTML" }
-  );
+  state[msg.from.id] = { action: "addadmin" };
+  bot.sendMessage(msg.chat.id, "Envie o ID do novo admin:");
 });
 
-console.log("🤖 WW BOT RESGATE rodando...");
+bot.on("message", (msg) => {
+  const s = state[msg.from.id];
+  if (!s) return;
+
+  if (s.action === "addadmin") {
+    const id = Number(msg.text);
+    if (!id) return;
+
+    db.run(`INSERT OR IGNORE INTO admins VALUES (?)`, [id]);
+    delete state[msg.from.id];
+
+    bot.sendMessage(msg.chat.id, "✅ Admin adicionado com sucesso.");
+  }
+
+  if (s.action === "qty") {
+    const qty = Number(msg.text);
+    if (!qty || qty < 1 || qty > 100) return;
+
+    const pack = s.pack;
+    delete state[msg.from.id];
+
+    let keys = [];
+    for (let i = 0; i < qty; i++) {
+      keys.push(generateKey(PRODUCTS[pack].prefix));
+    }
+
+    bot.sendMessage(
+      msg.chat.id,
+      `✅ Keys geradas (${PRODUCTS[pack].name})\n\n<pre>${keys.join("\n")}</pre>`,
+      { parse_mode: "HTML" }
+    );
+
+    saveLog("GERACAO_KEYS", msg.from.id, { pack, qty });
+  }
+});
+
+/* ================= CALLBACKS ================= */
+
+bot.on("callback_query", (q) => {
+  const id = q.from.id;
+
+  isAdmin(id, (ok) => {
+    if (!ok) return;
+
+    if (q.data === "svc_gen") {
+      bot.sendMessage(q.message.chat.id, "Escolha o pack:", {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "💉 Inject", callback_data: "gen_inject" }],
+            [{ text: "🧪 Pharmacy", callback_data: "gen_pharmacy" }],
+            [{ text: "📦 Basic", callback_data: "gen_basic" }]
+          ]
+        }
+      });
+    }
+
+    if (q.data.startsWith("gen_")) {
+      const pack = q.data.replace("gen_", "");
+      state[id] = { action: "qty", pack };
+      bot.sendMessage(q.message.chat.id, "Quantas keys deseja gerar?");
+    }
+
+    if (q.data === "svc_logs") {
+      db.all(`SELECT * FROM logs ORDER BY id DESC LIMIT 5`, [], (_, rows) => {
+        const buttons = rows.map(r => [
+          { text: `${r.time}`, callback_data: `log_${r.id}` }
+        ]);
+
+        bot.sendMessage(q.message.chat.id, "📊 Logs:", {
+          reply_markup: { inline_keyboard: buttons }
+        });
+      });
+    }
+
+    if (q.data.startsWith("log_")) {
+      const idlog = q.data.replace("log_", "");
+      db.get(`SELECT * FROM logs WHERE id = ?`, [idlog], (_, r) => {
+        if (!r) return;
+
+        bot.sendMessage(
+          q.message.chat.id,
+`📊 LOG DETALHADO
+
+🕒 ${r.time}
+📌 ${r.type}
+👤 ${r.user_id}
+
+<pre>${r.info}</pre>`,
+          { parse_mode: "HTML" }
+        );
+      });
+    }
+  });
+});
+
+console.log("🤖 BOT rodando");
