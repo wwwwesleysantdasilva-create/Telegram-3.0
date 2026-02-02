@@ -1,14 +1,12 @@
 {
   "name": "telegram-access-bot",
   "version": "1.0.0",
-  "type": "module",
-  "main": "src/bot.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node src/bot.js"
+    "start": "node index.js"
   },
   "dependencies": {
-    "node-telegram-bot-api": "^0.61.0",
-    "better-sqlite3": "^9.4.0",
-    "uuid": "^9.0.1"
+    "node-telegram-bot-api": "^0.66.0",
+    "sqlite3": "^5.1.7"
   }
 }
