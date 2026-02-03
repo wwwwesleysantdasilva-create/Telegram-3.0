@@ -23,15 +23,20 @@ let state = {};
 
 db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS admins (id INTEGER UNIQUE)`);
+
   db.run(`CREATE TABLE IF NOT EXISTS keys (
     key TEXT UNIQUE,
     product TEXT,
     used INTEGER DEFAULT 0
   )`);
+
   db.run(`CREATE TABLE IF NOT EXISTS logs (
     key TEXT,
     product TEXT,
     user_id INTEGER,
+    username TEXT,
+    first_name TEXT,
+    last_name TEXT,
     date TEXT
   )`);
 });
@@ -52,12 +57,21 @@ const isAdmin = (id, cb) => {
 /* ================= START ================= */
 
 bot.onText(/\/start/, (msg) => {
+  state[msg.from.id] = { step: "choose_pack" };
+
   bot.sendMessage(
     msg.chat.id,
-`👋 <b>Olá, seja bem-vindo!</b>
-
-Envie sua <b>KEY</b> para liberar o acesso.`,
-    { parse_mode: "HTML" }
+    "👋 <b>Olá, seja bem-vindo!</b>\n\nQual pack você deseja resgatar?",
+    {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "💉 Inject Pack", callback_data: "user_INJECT" }],
+          [{ text: "🧪 Pharmacy Pack", callback_data: "user_PHARM" }],
+          [{ text: "📱 Basic Pack", callback_data: "user_BASIC" }]
+        ]
+      }
+    }
   );
 });
 
@@ -75,9 +89,8 @@ bot.onText(/\/servico/, (msg) => {
       [{ text: "📊 Logs", callback_data: "logs_menu" }]
     ];
 
-    if (msg.from.id === MASTER_ADMIN) {
+    if (msg.from.id === MASTER_ADMIN)
       keyboard.push([{ text: "➕ Add Admin", callback_data: "add_admin" }]);
-    }
 
     bot.sendMessage(msg.chat.id, "🛠 <b>Painel de Serviço</b>", {
       parse_mode: "HTML",
@@ -91,6 +104,18 @@ bot.onText(/\/servico/, (msg) => {
 bot.on("callback_query", (q) => {
   const id = q.from.id;
   const chat = q.message.chat.id;
+
+  /* ===== USER PACK ===== */
+  if (q.data.startsWith("user_")) {
+    const product = q.data.replace("user_", "");
+    state[id] = { step: "await_key", product };
+
+    return bot.sendMessage(
+      chat,
+      `📦 <b>${PRODUCTS[product].name}</b>\n\nEnvie sua <b>KEY</b> para liberar o acesso.`,
+      { parse_mode: "HTML" }
+    );
+  }
 
   isAdmin(id, (ok) => {
     if (!ok) return;
@@ -144,14 +169,24 @@ bot.on("callback_query", (q) => {
         [q.data.replace("log_", "")],
         (_, l) => {
           if (!l) return;
+
           bot.sendMessage(
             chat,
-`📊 <b>LOG</b>
+`📊 <b>LOG DE RESGATE</b>
 
-KEY: <code>${l.key}</code>
-PRODUTO: ${l.product}
-USUÁRIO: <code>${l.user_id}</code>
-DATA: ${l.date}`,
+<b>USUÁRIO:</b>
+ID: <code>${l.user_id}</code>
+Username: ${l.username || "N/A"}
+Nome: ${l.first_name || ""} ${l.last_name || ""}
+
+<b>KEY USADA:</b>
+<code>${l.key}</code>
+
+<b>PRODUTO:</b>
+${l.product}
+
+<b>DATA / HORÁRIO:</b>
+${l.date}`,
             { parse_mode: "HTML" }
           );
         }
@@ -168,9 +203,7 @@ bot.on("message", async (msg) => {
   if (!text) return;
 
   /* ===== ADD ADMIN ===== */
-  if (state[id]?.step === "addadmin") {
-    if (id !== MASTER_ADMIN) return;
-
+  if (state[id]?.step === "addadmin" && id === MASTER_ADMIN) {
     const uid = Number(text);
     if (!uid) {
       bot.sendMessage(msg.chat.id, "❌ ID inválido.");
@@ -188,68 +221,44 @@ bot.on("message", async (msg) => {
     return;
   }
 
-  /* ===== GERAR KEYS ===== */
-  if (state[id]?.step === "qty") {
-    const qty = parseInt(text);
-    if (!qty || qty < 1 || qty > 100) {
-      bot.sendMessage(msg.chat.id, "❌ Quantidade inválida.");
-      return;
-    }
+  /* ===== VALIDAR KEY (USER) ===== */
+  if (state[id]?.step === "await_key") {
+    const productKey = state[id].product;
+    const product = PRODUCTS[productKey];
 
-    const prefix = state[id].product;
-    let keys = [];
+    db.get(`SELECT * FROM keys WHERE key=?`, [text], async (_, row) => {
+      if (!row || row.used || row.product !== productKey) {
+        bot.sendMessage(msg.chat.id, "❌ Key inválida para este pack.");
+        return;
+      }
 
-    for (let i = 0; i < qty; i++) {
-      const key = genKey(prefix);
-      keys.push(key);
-      db.run(`INSERT INTO keys VALUES (?, ?, 0)`, [key, prefix]);
-    }
+      const invite = await bot.createChatInviteLink(product.group, {
+        member_limit: 1
+      });
 
-    bot.sendMessage(
-      msg.chat.id,
-`✅ <b>Keys geradas (${prefix})</b>
+      db.run(`UPDATE keys SET used=1 WHERE key=?`, [text]);
+      db.run(
+        `INSERT INTO logs VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          text,
+          product.name,
+          id,
+          msg.from.username || null,
+          msg.from.first_name || null,
+          msg.from.last_name || null,
+          nowBR()
+        ]
+      );
 
-<pre>${keys.join("\n")}</pre>`,
-      { parse_mode: "HTML" }
-    );
+      bot.sendMessage(
+        msg.chat.id,
+        `✅ <b>Acesso liberado!</b>\n\n${invite.invite_link}`,
+        { parse_mode: "HTML" }
+      );
 
-    state[id] = null;
-    return;
-  }
-
-  /* ===== VALIDAR KEY ===== */
-  if (!text.includes("-")) return;
-
-  const prefix = text.split("-")[0];
-  const product = PRODUCTS[prefix];
-  if (!product) return;
-
-  db.get(`SELECT * FROM keys WHERE key=?`, [text], async (_, row) => {
-    if (!row || row.used) {
-      bot.sendMessage(msg.chat.id, "❌ Key inválida ou já usada.");
-      return;
-    }
-
-    const invite = await bot.createChatInviteLink(product.group, {
-      member_limit: 1
+      state[id] = null;
     });
-
-    db.run(`UPDATE keys SET used=1 WHERE key=?`, [text]);
-    db.run(`INSERT INTO logs VALUES (?, ?, ?, ?)`, [
-      text,
-      product.name,
-      id,
-      nowBR()
-    ]);
-
-    bot.sendMessage(
-      msg.chat.id,
-`✅ <b>Acesso liberado!</b>
-
-${invite.invite_link}`,
-      { parse_mode: "HTML" }
-    );
-  });
+  }
 });
 
 console.log("🤖 BOT ESTÁVEL RODANDO");
