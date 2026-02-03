@@ -79,10 +79,7 @@ bot.onText(/\/start/, (msg) => {
 
 bot.onText(/\/servico/, (msg) => {
   isAdmin(msg.from.id, (ok) => {
-    if (!ok) {
-      bot.sendMessage(msg.chat.id, "⛔ Você não tem permissão.");
-      return;
-    }
+    if (!ok) return bot.sendMessage(msg.chat.id, "⛔ Sem permissão.");
 
     const keyboard = [
       [{ text: "🔑 Gerar Keys", callback_data: "gen_menu" }],
@@ -105,18 +102,19 @@ bot.on("callback_query", (q) => {
   const id = q.from.id;
   const chat = q.message.chat.id;
 
-  /* ===== USER PACK ===== */
+  /* ===== USER FLOW ===== */
   if (q.data.startsWith("user_")) {
     const product = q.data.replace("user_", "");
     state[id] = { step: "await_key", product };
 
     return bot.sendMessage(
       chat,
-      `📦 <b>${PRODUCTS[product].name}</b>\n\nEnvie sua <b>KEY</b> para liberar o acesso.`,
+      `📦 <b>${PRODUCTS[product].name}</b>\n\nEnvie sua <b>KEY</b>.`,
       { parse_mode: "HTML" }
     );
   }
 
+  /* ===== ADMIN FLOW ===== */
   isAdmin(id, (ok) => {
     if (!ok) return;
 
@@ -205,32 +203,59 @@ bot.on("message", async (msg) => {
   /* ===== ADD ADMIN ===== */
   if (state[id]?.step === "addadmin" && id === MASTER_ADMIN) {
     const uid = Number(text);
-    if (!uid) {
-      bot.sendMessage(msg.chat.id, "❌ ID inválido.");
-      return;
-    }
+    if (!uid) return bot.sendMessage(msg.chat.id, "❌ ID inválido.");
 
     db.run(`INSERT OR IGNORE INTO admins VALUES (?)`, [uid], function () {
-      if (this.changes === 0)
-        bot.sendMessage(msg.chat.id, "⚠️ Esse ID já é admin.");
-      else
-        bot.sendMessage(msg.chat.id, "✅ Admin adicionado com sucesso.");
+      bot.sendMessage(
+        msg.chat.id,
+        this.changes === 0
+          ? "⚠️ Esse ID já é admin."
+          : "✅ Admin adicionado com sucesso."
+      );
     });
 
     state[id] = null;
     return;
   }
 
-  /* ===== VALIDAR KEY (USER) ===== */
+  /* ===== GERAR KEYS ===== */
+  if (state[id]?.step === "qty") {
+    const qty = parseInt(text);
+    if (!qty || qty < 1 || qty > 100)
+      return bot.sendMessage(msg.chat.id, "❌ Quantidade inválida.");
+
+    const prefix = state[id].product;
+    let keys = [];
+
+    for (let i = 0; i < qty; i++) {
+      const key = genKey(prefix);
+      keys.push(key);
+      db.run(`INSERT INTO keys (key, product, used) VALUES (?, ?, 0)`, [
+        key,
+        prefix
+      ]);
+    }
+
+    bot.sendMessage(
+      msg.chat.id,
+`✅ <b>Keys geradas (${prefix})</b>
+
+<pre>${keys.join("\n")}</pre>`,
+      { parse_mode: "HTML" }
+    );
+
+    state[id] = null;
+    return;
+  }
+
+  /* ===== VALIDAR KEY ===== */
   if (state[id]?.step === "await_key") {
     const productKey = state[id].product;
     const product = PRODUCTS[productKey];
 
     db.get(`SELECT * FROM keys WHERE key=?`, [text], async (_, row) => {
-      if (!row || row.used || row.product !== productKey) {
-        bot.sendMessage(msg.chat.id, "❌ Key inválida para este pack.");
-        return;
-      }
+      if (!row || row.used || row.product !== productKey)
+        return bot.sendMessage(msg.chat.id, "❌ Key inválida.");
 
       const invite = await bot.createChatInviteLink(product.group, {
         member_limit: 1
