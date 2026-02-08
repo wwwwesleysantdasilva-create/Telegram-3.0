@@ -1,11 +1,12 @@
 import TelegramBot from "node-telegram-bot-api";
 import sqlite3 from "sqlite3";
+import fs from "fs";
 
 /* ================= CONFIG ================= */
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const MASTER_ADMIN = 8235876348;
-const LOG_GROUP_ID = -5164103528;
+const LOG_GROUP_ID = -1003713776395;
 
 const PRODUCTS = {
   INJECT: { name: "💉 Inject Pack", group: -1003801083393 },
@@ -17,7 +18,9 @@ const PRODUCTS = {
 
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 const db = new sqlite3.Database("./database.sqlite");
+
 let state = {};
+let conversations = {};
 
 /* ================= DATABASE ================= */
 
@@ -28,16 +31,6 @@ db.serialize(() => {
     key TEXT UNIQUE,
     product TEXT,
     used INTEGER DEFAULT 0
-  )`);
-
-  db.run(`CREATE TABLE IF NOT EXISTS logs (
-    key TEXT,
-    product TEXT,
-    user_id INTEGER,
-    username TEXT,
-    first_name TEXT,
-    last_name TEXT,
-    date TEXT
   )`);
 });
 
@@ -54,10 +47,66 @@ const isAdmin = (id, cb) => {
   db.get(`SELECT id FROM admins WHERE id=?`, [id], (_, r) => cb(!!r));
 };
 
+function logMsg(uid, sender, text) {
+  if (!conversations[uid]) return;
+  conversations[uid].messages.push({
+    time: nowBR(),
+    sender,
+    text
+  });
+}
+
+function generateTXT(uid) {
+  const c = conversations[uid];
+  if (!c) return null;
+
+  let content = `===== LOG DE ATENDIMENTO =====
+
+Usuário:
+Nome: ${c.user.first_name || ""} ${c.user.last_name || ""}
+Username: @${c.user.username || "N/A"}
+ID: ${c.user.id}
+
+Produto:
+${c.product?.name || "NÃO SELECIONADO"}
+
+Key:
+${c.key || "NÃO INFORMADA"} (${c.valid === null ? "N/A" : c.valid ? "VALIDA" : "INVÁLIDA"})
+
+Grupo Liberado:
+${c.group || "NENHUM"}
+
+Horário Entrada:
+${c.joinTime || "NÃO ENTROU"}
+
+===== CONVERSA =====
+`;
+
+  c.messages.forEach(m => {
+    content += `[${m.time}] ${m.sender}: ${m.text}\n`;
+  });
+
+  const path = `./log_${uid}_${Date.now()}.txt`;
+  fs.writeFileSync(path, content);
+  return path;
+}
+
 /* ================= START ================= */
 
 bot.onText(/\/start/, (msg) => {
-  state[msg.from.id] = { step: "choose_pack" };
+  const id = msg.from.id;
+
+  conversations[id] = {
+    user: msg.from,
+    product: null,
+    key: null,
+    valid: null,
+    group: null,
+    joinTime: null,
+    messages: []
+  };
+
+  logMsg(id, "USUÁRIO", "/start");
 
   bot.sendMessage(
     msg.chat.id,
@@ -72,7 +121,15 @@ bot.onText(/\/start/, (msg) => {
         ]
       }
     }
-  );
+  ).then(() => {
+    logMsg(id, "BOT", "Menu de packs enviado");
+  });
+
+  // LOG IMEDIATO DO /START
+  const file = generateTXT(id);
+  bot.sendDocument(LOG_GROUP_ID, file, {
+    caption: `📥 /START DETECTADO\n👤 ${msg.from.first_name}\n🕒 ${nowBR()}`
+  });
 });
 
 /* ================= SERVIÇO ================= */
@@ -83,11 +140,9 @@ bot.onText(/\/servico/, (msg) => {
 
     const keyboard = [
       [{ text: "🔑 Gerar Keys", callback_data: "gen_menu" }],
-      [{ text: "📊 Logs", callback_data: "logs_menu" }]
+      [{ text: "➕ Add Admin", callback_data: "add_admin" }],
+      [{ text: "➖ Remover Admin", callback_data: "rem_admin" }]
     ];
-
-    if (msg.from.id === MASTER_ADMIN)
-      keyboard.push([{ text: "➕ Add Admin", callback_data: "add_admin" }]);
 
     bot.sendMessage(msg.chat.id, "🛠 <b>Painel de Serviço</b>", {
       parse_mode: "HTML",
@@ -102,93 +157,31 @@ bot.on("callback_query", (q) => {
   const id = q.from.id;
   const chat = q.message.chat.id;
 
-  /* ===== USER FLOW ===== */
   if (q.data.startsWith("user_")) {
     const product = q.data.replace("user_", "");
     state[id] = { step: "await_key", product };
+
+    conversations[id].product = PRODUCTS[product];
+    logMsg(id, "USUÁRIO", PRODUCTS[product].name);
 
     return bot.sendMessage(
       chat,
       `📦 <b>${PRODUCTS[product].name}</b>\n\nEnvie sua <b>KEY</b>.`,
       { parse_mode: "HTML" }
-    );
+    ).then(() => logMsg(id, "BOT", "Solicitou key"));
   }
 
-  /* ===== ADMIN FLOW ===== */
   isAdmin(id, (ok) => {
     if (!ok) return;
 
-    if (q.data === "gen_menu") {
-      return bot.sendMessage(chat, "Escolha o pack:", {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "💉 Inject", callback_data: "gen_INJECT" }],
-            [{ text: "🧪 Pharmacy", callback_data: "gen_PHARM" }],
-            [{ text: "📱 Basic", callback_data: "gen_BASIC" }]
-          ]
-        }
-      });
-    }
-
-    if (q.data.startsWith("gen_")) {
-      state[id] = {
-        step: "qty",
-        product: q.data.replace("gen_", "")
-      };
-      return bot.sendMessage(chat, "Quantas keys deseja gerar?");
-    }
-
-    if (q.data === "add_admin" && id === MASTER_ADMIN) {
+    if (q.data === "add_admin") {
       state[id] = { step: "addadmin" };
       return bot.sendMessage(chat, "Envie o ID do novo admin:");
     }
 
-    if (q.data === "logs_menu") {
-      db.all(
-        `SELECT rowid, date FROM logs ORDER BY rowid DESC LIMIT 10`,
-        (_, rows) => {
-          if (!rows.length)
-            return bot.sendMessage(chat, "Nenhum log encontrado.");
-
-          bot.sendMessage(chat, "Selecione um log:", {
-            reply_markup: {
-              inline_keyboard: rows.map(r => [
-                { text: r.date, callback_data: "log_" + r.rowid }
-              ])
-            }
-          });
-        }
-      );
-    }
-
-    if (q.data.startsWith("log_")) {
-      db.get(
-        `SELECT * FROM logs WHERE rowid=?`,
-        [q.data.replace("log_", "")],
-        (_, l) => {
-          if (!l) return;
-
-          bot.sendMessage(
-            chat,
-`📊 <b>LOG DE RESGATE</b>
-
-<b>USUÁRIO:</b>
-ID: <code>${l.user_id}</code>
-Username: ${l.username || "N/A"}
-Nome: ${l.first_name || ""} ${l.last_name || ""}
-
-<b>KEY USADA:</b>
-<code>${l.key}</code>
-
-<b>PRODUTO:</b>
-${l.product}
-
-<b>DATA / HORÁRIO:</b>
-${l.date}`,
-            { parse_mode: "HTML" }
-          );
-        }
-      );
+    if (q.data === "rem_admin") {
+      state[id] = { step: "remadmin" };
+      return bot.sendMessage(chat, "Envie o ID do admin para remover:");
     }
   });
 });
@@ -200,80 +193,44 @@ bot.on("message", async (msg) => {
   const text = msg.text?.trim();
   if (!text) return;
 
-  /* ===== ADD ADMIN ===== */
+  logMsg(id, "USUÁRIO", text);
+
   if (state[id]?.step === "addadmin" && id === MASTER_ADMIN) {
-    const uid = Number(text);
-    if (!uid) return bot.sendMessage(msg.chat.id, "❌ ID inválido.");
-
-    db.run(`INSERT OR IGNORE INTO admins VALUES (?)`, [uid], function () {
-      bot.sendMessage(
-        msg.chat.id,
-        this.changes === 0
-          ? "⚠️ Esse ID já é admin."
-          : "✅ Admin adicionado com sucesso."
-      );
-    });
-
+    db.run(`INSERT OR IGNORE INTO admins VALUES (?)`, [Number(text)]);
     state[id] = null;
-    return;
+    return bot.sendMessage(msg.chat.id, "✅ Admin adicionado.");
   }
 
-  /* ===== GERAR KEYS ===== */
-  if (state[id]?.step === "qty") {
-    const qty = parseInt(text);
-    if (!qty || qty < 1 || qty > 100)
-      return bot.sendMessage(msg.chat.id, "❌ Quantidade inválida.");
-
-    const prefix = state[id].product;
-    let keys = [];
-
-    for (let i = 0; i < qty; i++) {
-      const key = genKey(prefix);
-      keys.push(key);
-      db.run(`INSERT INTO keys (key, product, used) VALUES (?, ?, 0)`, [
-        key,
-        prefix
-      ]);
-    }
-
-    bot.sendMessage(
-      msg.chat.id,
-`✅ <b>Keys geradas (${prefix})</b>
-
-<pre>${keys.join("\n")}</pre>`,
-      { parse_mode: "HTML" }
-    );
-
+  if (state[id]?.step === "remadmin" && id === MASTER_ADMIN) {
+    db.run(`DELETE FROM admins WHERE id=?`, [Number(text)]);
     state[id] = null;
-    return;
+    return bot.sendMessage(msg.chat.id, "✅ Admin removido.");
   }
 
-  /* ===== VALIDAR KEY ===== */
   if (state[id]?.step === "await_key") {
     const productKey = state[id].product;
     const product = PRODUCTS[productKey];
 
+    conversations[id].key = text;
+
     db.get(`SELECT * FROM keys WHERE key=?`, [text], async (_, row) => {
-      if (!row || row.used || row.product !== productKey)
+      if (!row || row.used || row.product !== productKey) {
+        conversations[id].valid = false;
+
+        const file = generateTXT(id);
+        bot.sendDocument(LOG_GROUP_ID, file, {
+          caption: `❌ TENTATIVA INVÁLIDA\n👤 ${msg.from.first_name}\n🕒 ${nowBR()}`
+        });
+
         return bot.sendMessage(msg.chat.id, "❌ Key inválida.");
+      }
 
       const invite = await bot.createChatInviteLink(product.group, {
         member_limit: 1
       });
 
-      db.run(`UPDATE keys SET used=1 WHERE key=?`, [text]);
-      db.run(
-        `INSERT INTO logs VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          text,
-          product.name,
-          id,
-          msg.from.username || null,
-          msg.from.first_name || null,
-          msg.from.last_name || null,
-          nowBR()
-        ]
-      );
+      conversations[id].valid = true;
+      conversations[id].group = product.group;
 
       bot.sendMessage(
         msg.chat.id,
@@ -281,9 +238,22 @@ bot.on("message", async (msg) => {
         { parse_mode: "HTML" }
       );
 
+      const file = generateTXT(id);
+      bot.sendDocument(LOG_GROUP_ID, file, {
+        caption: `✅ RESGATE CONCLUÍDO\n📦 ${product.name}\n👤 ${msg.from.first_name}\n🕒 ${nowBR()}`
+      });
+
       state[id] = null;
+      delete conversations[id];
     });
   }
 });
 
-console.log("🤖 BOT ESTÁVEL RODANDO");
+bot.on("chat_member", (u) => {
+  const id = u.from?.id;
+  if (conversations[id]) {
+    conversations[id].joinTime = nowBR();
+  }
+});
+
+console.log("🤖 BOT RODANDO COM LOG FORENSE ATIVO");
