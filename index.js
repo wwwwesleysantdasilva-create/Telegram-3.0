@@ -108,22 +108,29 @@ bot.onText(/\/start/, (msg) => {
 
   logMsg(id, `👤 ${userName}`, "/start");
 
-  bot.sendMessage(
-    msg.chat.id,
-    "👋 <b>Olá, seja bem-vindo!</b>\n\nQual pack você deseja resgatar?",
-    {
-      parse_mode: "HTML",
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "💉 Inject Pack", callback_data: "user_INJECT" }],
-          [{ text: "🧪 Pharmacy Pack", callback_data: "user_PHARM" }],
-          [{ text: "📱 Basic Pack", callback_data: "user_BASIC" }]
-        ]
-      }
-    }
-  );
+  isAdmin(id, (admin) => {
+    const keyboard = [
+      [{ text: "💉 Inject Pack", callback_data: "user_INJECT" }],
+      [{ text: "🧪 Pharmacy Pack", callback_data: "user_PHARM" }],
+      [{ text: "📱 Basic Pack", callback_data: "user_BASIC" }]
+    ];
 
-  logMsg(id, "🤖 BOT", "Menu de packs enviado");
+    // 🔹 BOTÃO ADMIN (somente admins)
+    if (admin) {
+      keyboard.push([{ text: "🛠 Painel Admin", callback_data: "admin_panel" }]);
+    }
+
+    bot.sendMessage(
+      msg.chat.id,
+      "👋 <b>Olá, seja bem-vindo!</b>\n\nQual pack você deseja resgatar?",
+      {
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard: keyboard }
+      }
+    );
+
+    logMsg(id, "🤖 BOT", "Menu inicial enviado");
+  });
 
   const file = generateTXT(id);
   bot.sendDocument(LOG_GROUP_ID, file, {
@@ -138,6 +145,22 @@ bot.on("callback_query", (q) => {
   const chat = q.message.chat.id;
   const userName = q.from.first_name || "Usuário";
 
+  // 🔹 PAINEL ADMIN (não interfere em nada)
+  if (q.data === "admin_panel") {
+    return isAdmin(id, (ok) => {
+      if (!ok) return;
+
+      logMsg(id, "🤖 BOT", "Acessou painel admin");
+
+      bot.sendMessage(
+        chat,
+        "🛠 <b>Painel Admin</b>\n\nUse seus comandos administrativos.",
+        { parse_mode: "HTML" }
+      );
+    });
+  }
+
+  // 🔹 FLUXO NORMAL DO USUÁRIO
   if (q.data.startsWith("user_")) {
     const product = q.data.replace("user_", "");
     state[id] = { step: "await_key", product };
@@ -219,4 +242,4 @@ bot.on("chat_member", (u) => {
   }
 });
 
-console.log("🤖 BOT RODANDO COM LOG PROFISSIONAL ATIVO");
+console.log("🤖 BOT RODANDO COM LOG PROFISSIONAL + PAINEL ADMIN");
