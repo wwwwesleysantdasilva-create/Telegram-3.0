@@ -8,6 +8,8 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const MASTER_ADMIN = 8235876348;
 const LOG_GROUP_ID = -1003713776395;
 
+const DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1470577182442000405/RvRTTT_-Rn15U_urvxLSzFzQ_1lNN9TCOJk5VOJ0aB0RINA6ub9iLsmltslaalfY_SO2";
+
 const PRODUCTS = {
   INJECT: { name: "💉 Inject Pack", group: -1003801083393 },
   PHARM: { name: "🧪 Pharmacy Pack", group: -1003705721917 },
@@ -45,6 +47,16 @@ const isAdmin = (id, cb) => {
   if (id === MASTER_ADMIN) return cb(true);
   db.get(`SELECT id FROM admins WHERE id=?`, [id], (_, r) => cb(!!r));
 };
+
+async function sendDiscord(msg) {
+  try {
+    await fetch(DISCORD_WEBHOOK, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: msg })
+    });
+  } catch {}
+}
 
 function logMsg(uid, sender, text) {
   if (!conversations[uid]) return;
@@ -120,19 +132,9 @@ bot.onText(/\/start/, (msg) => {
       keyboard.push([{ text: "🛠 Painel Admin", callback_data: "admin_panel" }]);
     }
 
-    bot.sendMessage(
-      msg.chat.id,
-      "👋 <b>Olá, seja bem-vindo!</b>\n\nEscolha uma opção:",
-      {
-        parse_mode: "HTML",
-        reply_markup: { inline_keyboard: keyboard }
-      }
-    );
-  });
-
-  const file = generateTXT(id);
-  bot.sendDocument(LOG_GROUP_ID, file, {
-    caption: `📥 /START\n👤 ${userName}\n🕒 ${nowBR()}`
+    bot.sendMessage(msg.chat.id, "Escolha uma opção:", {
+      reply_markup: { inline_keyboard: keyboard }
+    });
   });
 });
 
@@ -141,7 +143,6 @@ bot.onText(/\/start/, (msg) => {
 bot.on("callback_query", (q) => {
   const id = q.from.id;
   const chat = q.message.chat.id;
-  const userName = q.from.first_name || "Usuário";
 
   if (q.data === "admin_panel") {
     return isAdmin(id, (ok) => {
@@ -160,23 +161,20 @@ bot.on("callback_query", (q) => {
         );
       }
 
-      bot.sendMessage(chat, "🛠 <b>Painel Administrativo</b>", {
-        parse_mode: "HTML",
+      bot.sendMessage(chat, "Painel Admin", {
         reply_markup: { inline_keyboard: buttons }
       });
-
-      logMsg(id, "🤖 BOT", "Painel admin aberto");
     });
   }
 
   if (q.data === "admin_gen") {
     state[id] = { step: "gen_choose" };
-    return bot.sendMessage(chat, "Escolha o pack:", {
+    return bot.sendMessage(chat, "Escolha pack:", {
       reply_markup: {
         inline_keyboard: [
-          [{ text: "💉 Inject", callback_data: "gen_INJECT" }],
-          [{ text: "🧪 Pharmacy", callback_data: "gen_PHARM" }],
-          [{ text: "📱 Basic", callback_data: "gen_BASIC" }]
+          [{ text: "Inject", callback_data: "gen_INJECT" }],
+          [{ text: "Pharmacy", callback_data: "gen_PHARM" }],
+          [{ text: "Basic", callback_data: "gen_BASIC" }]
         ]
       }
     });
@@ -184,31 +182,24 @@ bot.on("callback_query", (q) => {
 
   if (q.data === "admin_add" && id === MASTER_ADMIN) {
     state[id] = { step: "add_admin" };
-    return bot.sendMessage(chat, "Envie o ID do novo admin:");
+    return bot.sendMessage(chat, "ID novo admin:");
   }
 
   if (q.data === "admin_remove" && id === MASTER_ADMIN) {
     state[id] = { step: "remove_admin" };
-    return bot.sendMessage(chat, "Envie o ID do admin para remover:");
+    return bot.sendMessage(chat, "ID remover admin:");
   }
 
   if (q.data.startsWith("gen_")) {
     state[id] = { step: "gen_qty", product: q.data.replace("gen_", "") };
-    return bot.sendMessage(chat, "Quantas keys deseja gerar?");
+    return bot.sendMessage(chat, "Quantidade keys:");
   }
 
   if (q.data.startsWith("user_")) {
     const product = q.data.replace("user_", "");
     state[id] = { step: "await_key", product };
-
     conversations[id].product = PRODUCTS[product];
-    logMsg(id, `👤 ${userName}`, PRODUCTS[product].name);
-
-    bot.sendMessage(
-      chat,
-      `📦 <b>${PRODUCTS[product].name}</b>\n\nEnvie sua <b>KEY</b>:`,
-      { parse_mode: "HTML" }
-    );
+    return bot.sendMessage(chat, "Envie a KEY:");
   }
 });
 
@@ -219,26 +210,22 @@ bot.on("message", (msg) => {
   const text = msg.text?.trim();
   if (!text) return;
 
-  const userName = msg.from.first_name || "Usuário";
-  logMsg(id, `👤 ${userName}`, text);
+  logMsg(id, msg.from.first_name, text);
 
   if (state[id]?.step === "add_admin" && id === MASTER_ADMIN) {
     db.run(`INSERT OR IGNORE INTO admins VALUES (?)`, [Number(text)]);
     state[id] = null;
-    return bot.sendMessage(msg.chat.id, "✅ Admin adicionado.");
+    return;
   }
 
   if (state[id]?.step === "remove_admin" && id === MASTER_ADMIN) {
     db.run(`DELETE FROM admins WHERE id=?`, [Number(text)]);
     state[id] = null;
-    return bot.sendMessage(msg.chat.id, "✅ Admin removido.");
+    return;
   }
 
   if (state[id]?.step === "gen_qty") {
     const qty = parseInt(text);
-    if (!qty || qty < 1 || qty > 100)
-      return bot.sendMessage(msg.chat.id, "❌ Quantidade inválida.");
-
     const prefix = state[id].product;
     let keys = [];
 
@@ -252,29 +239,19 @@ bot.on("message", (msg) => {
     }
 
     state[id] = null;
-    return bot.sendMessage(
-      msg.chat.id,
-      `✅ Keys geradas:\n\n<pre>${keys.join("\n")}</pre>`,
-      { parse_mode: "HTML" }
-    );
+    return bot.sendMessage(msg.chat.id, keys.join("\n"));
   }
 
+  /* ===== KEY RESGATE = ENTRADA CONFIRMADA ===== */
   if (state[id]?.step === "await_key") {
     const productKey = state[id].product;
     const product = PRODUCTS[productKey];
-
     conversations[id].key = text;
 
     db.get(`SELECT * FROM keys WHERE key=?`, [text], async (_, row) => {
       if (!row || row.used || row.product !== productKey) {
         conversations[id].valid = false;
-
-        const file = generateTXT(id);
-        bot.sendDocument(LOG_GROUP_ID, file, {
-          caption: `❌ KEY INVÁLIDA\n👤 ${userName}\n🕒 ${nowBR()}`
-        });
-
-        return bot.sendMessage(msg.chat.id, "❌ Key inválida.");
+        return bot.sendMessage(msg.chat.id, "KEY INVÁLIDA");
       }
 
       const invite = await bot.createChatInviteLink(product.group, {
@@ -286,43 +263,25 @@ bot.on("message", (msg) => {
       conversations[id].valid = true;
       conversations[id].group = product.group;
 
-      bot.sendMessage(
-        msg.chat.id,
-        `✅ <b>Acesso liberado!</b>\n\n${invite.invite_link}`,
-        { parse_mode: "HTML" }
-      );
+      /* MARCA COMO ENTROU NO GRUPO NO MESMO MOMENTO */
+      conversations[id].joinTime = nowBR();
+      logMsg(id, "BOT", "ENTROU NO GRUPO (KEY RESGATADA)");
+
+      bot.sendMessage(msg.chat.id, invite.invite_link);
 
       const file = generateTXT(id);
       bot.sendDocument(LOG_GROUP_ID, file, {
-        caption: `✅ RESGATE CONCLUÍDO\n📦 ${product.name}\n👤 ${userName}\n🕒 ${nowBR()}`
+        caption: `ENTROU NO GRUPO | ${msg.from.first_name}`
       });
 
-      state[id] = null;
+      await sendDiscord(
+        `ENTROU NO GRUPO\nUser: ${msg.from.first_name}\nID: ${id}\nProduto: ${product.name}\nKey: ${text}\nHora: ${nowBR()}`
+      );
 
-      setTimeout(() => delete conversations[id], 1000 * 60 * 60);
+      state[id] = null;
+      delete conversations[id];
     });
   }
 });
 
-/* ================= DETECTA ENTRADA NO GRUPO ================= */
-
-bot.on("my_chat_member", (update) => {
-  const newMember = update.new_chat_member;
-  const user = newMember.user;
-
-  if (newMember.status === "member" || newMember.status === "restricted") {
-    const id = user.id;
-
-    if (conversations[id]) {
-      conversations[id].joinTime = nowBR();
-      logMsg(id, "🤖 BOT", "Usuário ENTROU no grupo");
-
-      const file = generateTXT(id);
-      bot.sendDocument(LOG_GROUP_ID, file, {
-        caption: `👤 USUÁRIO ENTROU NO GRUPO\nID: ${id}\n🕒 ${nowBR()}`
-      });
-    }
-  }
-});
-
-console.log("🤖 BOT ONLINE — PAINEL ADMIN E KEYS FUNCIONAIS");
+console.log("BOT ONLINE");
