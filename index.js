@@ -276,9 +276,8 @@ bot.on("message", (msg) => {
       conversations[id].valid = true;
       conversations[id].group = product.group;
 
-      /* ===== CONTA COMO ENTROU NO MOMENTO DO LINK ===== */
+      /* ===== CONTA COMO ENTROU NO MOMENTO DA VALIDAÇÃO ===== */
       conversations[id].joinTime = nowBR();
-      logMsg(id, "🤖 BOT", "ENTROU NO GRUPO (LINK GERADO)");
 
       bot.sendMessage(
         msg.chat.id,
