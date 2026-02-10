@@ -1,6 +1,7 @@
 import TelegramBot from "node-telegram-bot-api";
 import sqlite3 from "sqlite3";
 import fs from "fs";
+import fetch from "node-fetch";
 
 /* ================= CONFIG ================= */
 
@@ -8,8 +9,8 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const MASTER_ADMIN = 8235876348;
 const LOG_GROUP_ID = -1003713776395;
 
-// 🔥 WEBHOOK DISCORD (exemplo fictício)
-const DISCORD_WEBHOOK = "https://discord.com/api/webhooks/XXXX/XXXX";
+// 🔥 WEBHOOK DISCORD
+const DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1470577182442000405/RvRTTT_-Rn15U_urvxLSzFzQ_1lNN9TCOJk5VOJ0aB0RINA6ub9iLsmltslaalfY_SO2";
 
 const PRODUCTS = {
   INJECT: { name: "💉 Inject Pack", group: -1003801083393 },
@@ -292,7 +293,7 @@ bot.on("message", (msg) => {
       });
 
       state[id] = null;
-      // ❌ NÃO apagar conversation aqui
+      // NÃO apagar conversation aqui
     });
   }
 });
@@ -317,7 +318,7 @@ bot.on("chat_member", (u) => {
 
   sendDiscord(`✅ CLIENTE ENTROU\nUser: ${user.first_name}\nID: ${id}\nGrupo: ${chatId}\nHora: ${nowBR()}`);
 
-  delete conversations[id]; // agora sim pode apagar
+  delete conversations[id];
 });
 
 console.log("🤖 BOT ONLINE — BASE ORIGINAL + LOG DE ENTRADA + DISCORD");
