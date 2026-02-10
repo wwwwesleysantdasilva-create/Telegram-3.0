@@ -1,7 +1,6 @@
 import TelegramBot from "node-telegram-bot-api";
 import sqlite3 from "sqlite3";
 import fs from "fs";
-import fetch from "node-fetch";
 
 /* ================= CONFIG ================= */
 
@@ -9,7 +8,7 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const MASTER_ADMIN = 8235876348;
 const LOG_GROUP_ID = -1003713776395;
 
-// DISCORD WEBHOOK
+// 🔥 DISCORD WEBHOOK
 const DISCORD_WEBHOOK = "COLOQUE_AQUI_SEU_WEBHOOK";
 
 const PRODUCTS = {
@@ -49,14 +48,6 @@ const isAdmin = (id, cb) => {
   if (id === MASTER_ADMIN) return cb(true);
   db.get(`SELECT id FROM admins WHERE id=?`, [id], (_, r) => cb(!!r));
 };
-
-function sendDiscord(msg) {
-  fetch(DISCORD_WEBHOOK, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content: msg })
-  }).catch(() => {});
-}
 
 function logMsg(uid, sender, text) {
   if (!conversations[uid]) return;
@@ -102,6 +93,16 @@ ${c.joinTime || "NÃO ENTROU"}
   return path;
 }
 
+// DISCORD SEND
+function sendDiscord(msg) {
+  if (!DISCORD_WEBHOOK) return;
+  fetch(DISCORD_WEBHOOK, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: msg })
+  }).catch(() => {});
+}
+
 /* ================= START ================= */
 
 bot.onText(/\/start/, (msg) => {
@@ -128,12 +129,18 @@ bot.onText(/\/start/, (msg) => {
       [{ text: "📱 Basic Pack", callback_data: "user_BASIC" }]
     ];
 
-    if (isAdm) keyboard.push([{ text: "🛠 Painel Admin", callback_data: "admin_panel" }]);
+    if (isAdm) {
+      keyboard.push([{ text: "🛠 Painel Admin", callback_data: "admin_panel" }]);
+    }
 
-    bot.sendMessage(msg.chat.id, "👋 <b>Olá, seja bem-vindo!</b>\n\nEscolha uma opção:", {
-      parse_mode: "HTML",
-      reply_markup: { inline_keyboard: keyboard }
-    });
+    bot.sendMessage(
+      msg.chat.id,
+      "👋 <b>Olá, seja bem-vindo!</b>\n\nEscolha uma opção:",
+      {
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard: keyboard }
+      }
+    );
   });
 
   const file = generateTXT(id);
@@ -155,7 +162,9 @@ bot.on("callback_query", (q) => {
 
       state[id] = null;
 
-      const buttons = [[{ text: "🔑 Gerar Keys", callback_data: "admin_gen" }]];
+      const buttons = [
+        [{ text: "🔑 Gerar Keys", callback_data: "admin_gen" }]
+      ];
 
       if (id === MASTER_ADMIN) {
         buttons.push(
@@ -208,9 +217,11 @@ bot.on("callback_query", (q) => {
     conversations[id].product = PRODUCTS[product];
     logMsg(id, `👤 ${userName}`, PRODUCTS[product].name);
 
-    bot.sendMessage(chat, `📦 <b>${PRODUCTS[product].name}</b>\n\nEnvie sua <b>KEY</b>:`, {
-      parse_mode: "HTML"
-    });
+    bot.sendMessage(
+      chat,
+      `📦 <b>${PRODUCTS[product].name}</b>\n\nEnvie sua <b>KEY</b>:`,
+      { parse_mode: "HTML" }
+    );
   }
 });
 
@@ -238,7 +249,8 @@ bot.on("message", (msg) => {
 
   if (state[id]?.step === "gen_qty") {
     const qty = parseInt(text);
-    if (!qty || qty < 1 || qty > 100) return bot.sendMessage(msg.chat.id, "❌ Quantidade inválida.");
+    if (!qty || qty < 1 || qty > 100)
+      return bot.sendMessage(msg.chat.id, "❌ Quantidade inválida.");
 
     const prefix = state[id].product;
     let keys = [];
@@ -246,13 +258,18 @@ bot.on("message", (msg) => {
     for (let i = 0; i < qty; i++) {
       const key = genKey(prefix);
       keys.push(key);
-      db.run(`INSERT INTO keys (key, product, used) VALUES (?, ?, 0)`, [key, prefix]);
+      db.run(`INSERT INTO keys (key, product, used) VALUES (?, ?, 0)`, [
+        key,
+        prefix
+      ]);
     }
 
     state[id] = null;
-    return bot.sendMessage(msg.chat.id, `✅ Keys geradas:\n\n<pre>${keys.join("\n")}</pre>`, {
-      parse_mode: "HTML"
-    });
+    return bot.sendMessage(
+      msg.chat.id,
+      `✅ Keys geradas:\n\n<pre>${keys.join("\n")}</pre>`,
+      { parse_mode: "HTML" }
+    );
   }
 
   if (state[id]?.step === "await_key") {
@@ -282,9 +299,11 @@ bot.on("message", (msg) => {
       conversations[id].valid = true;
       conversations[id].group = product.group;
 
-      bot.sendMessage(msg.chat.id, `✅ <b>Acesso liberado!</b>\n\n${invite.invite_link}`, {
-        parse_mode: "HTML"
-      });
+      bot.sendMessage(
+        msg.chat.id,
+        `✅ <b>Acesso liberado!</b>\n\n${invite.invite_link}`,
+        { parse_mode: "HTML" }
+      );
 
       const file = generateTXT(id);
       bot.sendDocument(LOG_GROUP_ID, file, {
@@ -292,12 +311,12 @@ bot.on("message", (msg) => {
       });
 
       state[id] = null;
-      // NÃO deletar conversation aqui
+      // NÃO apagar conversations aqui
     });
   }
 });
 
-/* ================= DETECTAR ENTRADA NO GRUPO ================= */
+/* ===== LOG ENTRADA NO GRUPO ===== */
 
 bot.on("chat_member", (u) => {
   const user = u.new_chat_member?.user;
@@ -315,9 +334,9 @@ bot.on("chat_member", (u) => {
     caption: `👤 ENTROU NO GRUPO\nID: ${id}\nGrupo: ${chatId}\n🕒 ${nowBR()}`
   });
 
-  sendDiscord(`✅ CLIENTE ENTROU\nUser: ${user.first_name}\nID: ${id}\nGrupo: ${chatId}\nHora: ${nowBR()}`);
+  sendDiscord(`CLIENTE ENTROU\nUser: ${user.first_name}\nID: ${id}\nGrupo: ${chatId}\nHora: ${nowBR()}`);
 
   delete conversations[id];
 });
 
-console.log("🤖 BOT ONLINE — BASE ORIGINAL + WEBHOOK DISCORD + LOG DE ENTRADA");
+console.log("🤖 BOT ONLINE — BASE ORIGINAL + LOG ENTRADA + DISCORD");
