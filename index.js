@@ -1,7 +1,6 @@
 import TelegramBot from "node-telegram-bot-api";
 import sqlite3 from "sqlite3";
 import fs from "fs";
-import fetch from "node-fetch";
 
 /* ================= CONFIG ================= */
 
@@ -9,7 +8,7 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const MASTER_ADMIN = 8235876348;
 const LOG_GROUP_ID = -1003713776395;
 
-// ⚠️ SEU WEBHOOK DISCORD
+// SEU WEBHOOK DISCORD
 const DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1470577182442000405/RvRTTT_-Rn15U_urvxLSzFzQ_1lNN9TCOJk5VOJ0aB0RINA6ub9iLsmltslaalfY_SO2";
 
 const PRODUCTS = {
@@ -20,13 +19,7 @@ const PRODUCTS = {
 
 /* ================= INIT ================= */
 
-// FORÇA RECEBER TODOS OS EVENTOS DO TELEGRAM
-const bot = new TelegramBot(BOT_TOKEN, {
-  polling: {
-    params: { allowed_updates: ["*"] }
-  }
-});
-
+const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 const db = new sqlite3.Database("./database.sqlite");
 
 let state = {};
@@ -35,23 +28,12 @@ let conversations = {};
 /* ================= DATABASE ================= */
 
 db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS admins (id INTEGER UNIQUE)`);
   db.run(`CREATE TABLE IF NOT EXISTS keys (
     key TEXT UNIQUE,
     product TEXT,
     used INTEGER DEFAULT 0
   )`);
 });
-
-/* ================= DISCORD LOG ================= */
-
-function sendDiscord(msg) {
-  fetch(DISCORD_WEBHOOK, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content: msg })
-  }).catch(() => {});
-}
 
 /* ================= HELPERS ================= */
 
@@ -61,18 +43,9 @@ const nowBR = () =>
 const genKey = (prefix) =>
   `${prefix}-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
 
-const isAdmin = (id, cb) => {
-  if (id === MASTER_ADMIN) return cb(true);
-  db.get(`SELECT id FROM admins WHERE id=?`, [id], (_, r) => cb(!!r));
-};
-
 function logMsg(uid, sender, text) {
   if (!conversations[uid]) return;
-  conversations[uid].messages.push({
-    time: nowBR(),
-    sender,
-    text
-  });
+  conversations[uid].messages.push({ time: nowBR(), sender, text });
 }
 
 function generateTXT(uid) {
@@ -90,13 +63,13 @@ Produto:
 ${c.product?.name || "NÃO SELECIONADO"}
 
 Key:
-${c.key || "NÃO INFORMADA"} (${c.valid === null ? "N/A" : c.valid ? "VÁLIDA" : "INVÁLIDA"})
+${c.key || "NÃO INFORMADA"} (${c.valid ? "VÁLIDA" : "INVÁLIDA"})
 
-Grupo Liberado:
+Grupo:
 ${c.group || "NENHUM"}
 
-Horário Entrada:
-${c.joinTime || "NÃO ENTROU"}
+Entrou no Grupo:
+${c.joinTime || "NÃO"}
 
 ===== CONVERSA =====
 `;
@@ -108,6 +81,15 @@ ${c.joinTime || "NÃO ENTROU"}
   const path = `./log_${uid}_${Date.now()}.txt`;
   fs.writeFileSync(path, content);
   return path;
+}
+
+// Enviar log para Discord
+function sendDiscord(msg) {
+  fetch(DISCORD_WEBHOOK, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: msg })
+  }).catch(() => {});
 }
 
 /* ================= START ================= */
@@ -127,62 +109,41 @@ bot.onText(/\/start/, (msg) => {
   };
 
   state[id] = null;
-  logMsg(id, `👤 ${userName}`, "/start");
+  logMsg(id, "USER", "/start");
 
-  isAdmin(id, (isAdm) => {
-    const keyboard = [
-      [{ text: "💉 Inject Pack", callback_data: "user_INJECT" }],
-      [{ text: "🧪 Pharmacy Pack", callback_data: "user_PHARM" }],
-      [{ text: "📱 Basic Pack", callback_data: "user_BASIC" }]
-    ];
+  const keyboard = [
+    [{ text: "💉 Inject Pack", callback_data: "user_INJECT" }],
+    [{ text: "🧪 Pharmacy Pack", callback_data: "user_PHARM" }],
+    [{ text: "📱 Basic Pack", callback_data: "user_BASIC" }]
+  ];
 
-    if (isAdm) keyboard.push([{ text: "🛠 Painel Admin", callback_data: "admin_panel" }]);
-
-    bot.sendMessage(
-      msg.chat.id,
-      "👋 <b>Olá, seja bem-vindo!</b>\n\nEscolha uma opção:",
-      {
-        parse_mode: "HTML",
-        reply_markup: { inline_keyboard: keyboard }
-      }
-    );
-  });
-
-  const file = generateTXT(id);
-  bot.sendDocument(LOG_GROUP_ID, file, {
-    caption: `📥 /START\n👤 ${userName}\n🕒 ${nowBR()}`
+  bot.sendMessage(msg.chat.id, "Escolha o pack:", {
+    reply_markup: { inline_keyboard: keyboard }
   });
 });
 
-/* ================= CALLBACKS ================= */
+/* ================= CALLBACK ================= */
 
 bot.on("callback_query", (q) => {
   const id = q.from.id;
-  const chat = q.message.chat.id;
-  const userName = q.from.first_name || "Usuário";
+  const product = q.data.replace("user_", "");
 
   if (q.data.startsWith("user_")) {
-    const product = q.data.replace("user_", "");
     state[id] = { step: "await_key", product };
-
     conversations[id].product = PRODUCTS[product];
-    logMsg(id, `👤 ${userName}`, PRODUCTS[product].name);
 
-    bot.sendMessage(chat, `📦 <b>${PRODUCTS[product].name}</b>\n\nEnvie sua <b>KEY</b>:`, {
-      parse_mode: "HTML"
-    });
+    bot.sendMessage(q.message.chat.id, "Envie sua KEY:");
   }
 });
 
-/* ================= MESSAGES ================= */
+/* ================= MESSAGE ================= */
 
 bot.on("message", (msg) => {
   const id = msg.from.id;
   const text = msg.text?.trim();
   if (!text) return;
 
-  const userName = msg.from.first_name || "Usuário";
-  logMsg(id, `👤 ${userName}`, text);
+  logMsg(id, "USER", text);
 
   if (state[id]?.step === "await_key") {
     const productKey = state[id].product;
@@ -193,15 +154,11 @@ bot.on("message", (msg) => {
     db.get(`SELECT * FROM keys WHERE key=?`, [text], async (_, row) => {
       if (!row || row.used || row.product !== productKey) {
         conversations[id].valid = false;
-        const file = generateTXT(id);
-        bot.sendDocument(LOG_GROUP_ID, file, {
-          caption: `❌ KEY INVÁLIDA\n👤 ${userName}\n🕒 ${nowBR()}`
-        });
         return bot.sendMessage(msg.chat.id, "❌ Key inválida.");
       }
 
       const invite = await bot.createChatInviteLink(product.group, {
-        expire_date: Math.floor(Date.now() / 1000) + 3600
+        member_limit: 1
       });
 
       db.run(`UPDATE keys SET used=1 WHERE key=?`, [text]);
@@ -209,15 +166,7 @@ bot.on("message", (msg) => {
       conversations[id].valid = true;
       conversations[id].group = product.group;
 
-      bot.sendMessage(msg.chat.id, `✅ <b>Acesso liberado!</b>\n\n${invite.invite_link}`, {
-        parse_mode: "HTML"
-      });
-
-      const file = generateTXT(id);
-      bot.sendDocument(LOG_GROUP_ID, file, {
-        caption: `✅ RESGATE CONCLUÍDO\n📦 ${product.name}\n👤 ${userName}\n🕒 ${nowBR()}`
-      });
-
+      bot.sendMessage(msg.chat.id, `✅ Acesso liberado:\n${invite.invite_link}`);
       state[id] = null;
     });
   }
@@ -234,27 +183,19 @@ bot.on("chat_member", (u) => {
 
   for (const p of Object.values(PRODUCTS)) {
     if (p.group === chatId && conversations[id]) {
-      const time = nowBR();
-
-      conversations[id].joinTime = time;
-      logMsg(id, "🤖 BOT", "Usuário entrou no grupo");
+      conversations[id].joinTime = nowBR();
+      logMsg(id, "BOT", "Entrou no grupo");
 
       const file = generateTXT(id);
       bot.sendDocument(LOG_GROUP_ID, file, {
-        caption: `👤 ENTROU NO GRUPO\n🆔 ${id}\n🕒 ${time}`
+        caption: `👤 ENTROU NO GRUPO\nID: ${id}`
       });
 
-      // 🔥 ENVIA PRO DISCORD (PROVA DE ENTREGA)
-      sendDiscord(`
-✅ CLIENTE ENTROU NO PRODUTO
-👤 ID TELEGRAM: ${id}
-📦 Produto: ${p.name}
-🕒 Hora: ${time}
-`);
+      sendDiscord(`✅ CLIENTE ENTROU\nUser: ${user.first_name}\nID: ${id}\nGrupo: ${p.name}\nHora: ${nowBR()}`);
 
-      delete conversations[id];
+      delete conversations[id]; // agora pode apagar
     }
   }
 });
 
-console.log("🤖 BOT ONLINE — LOG TELEGRAM + DISCORD ATIVO");
+console.log("BOT ONLINE");
