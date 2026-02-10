@@ -1,6 +1,7 @@
 import TelegramBot from "node-telegram-bot-api";
 import sqlite3 from "sqlite3";
 import fs from "fs";
+import fetch from "node-fetch";
 
 /* ================= CONFIG ================= */
 
@@ -8,8 +9,8 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const MASTER_ADMIN = 8235876348;
 const LOG_GROUP_ID = -1003713776395;
 
-// 🔥 DISCORD WEBHOOK
-const DISCORD_WEBHOOK = "COLOQUE_AQUI_SEU_WEBHOOK";
+const DISCORD_WEBHOOK =
+  "https://discord.com/api/webhooks/1470577182442000405/RvRTTT_-Rn15U_urvxLSzFzQ_1lNN9TCOJk5VOJ0aB0RINA6ub9iLsmltslaalfY_SO2";
 
 const PRODUCTS = {
   INJECT: { name: "💉 Inject Pack", group: -1003801083393 },
@@ -93,14 +94,18 @@ ${c.joinTime || "NÃO ENTROU"}
   return path;
 }
 
-// DISCORD SEND
-function sendDiscord(msg) {
-  if (!DISCORD_WEBHOOK) return;
-  fetch(DISCORD_WEBHOOK, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content: msg })
-  }).catch(() => {});
+/* ================= DISCORD ================= */
+
+async function sendDiscord(msg) {
+  try {
+    await fetch(DISCORD_WEBHOOK, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: msg })
+    });
+  } catch (e) {
+    console.log("Erro Discord:", e);
+  }
 }
 
 /* ================= START ================= */
@@ -311,32 +316,27 @@ bot.on("message", (msg) => {
       });
 
       state[id] = null;
-      // NÃO apagar conversations aqui
+      delete conversations[id];
     });
   }
 });
 
-/* ===== LOG ENTRADA NO GRUPO ===== */
+/* ================= GROUP JOIN LOG ================= */
 
 bot.on("chat_member", (u) => {
-  const user = u.new_chat_member?.user;
-  const chatId = u.chat?.id;
-  if (!user) return;
-
-  const id = user.id;
-  if (!conversations[id]) return;
+  const id = u.from?.id;
+  if (!id || !conversations[id]) return;
 
   conversations[id].joinTime = nowBR();
   logMsg(id, "🤖 BOT", "Usuário entrou no grupo");
 
-  const file = generateTXT(id);
-  bot.sendDocument(LOG_GROUP_ID, file, {
-    caption: `👤 ENTROU NO GRUPO\nID: ${id}\nGrupo: ${chatId}\n🕒 ${nowBR()}`
-  });
+  const user = conversations[id].user;
+  const product = conversations[id].product?.name || "N/A";
+  const key = conversations[id].key || "N/A";
 
-  sendDiscord(`CLIENTE ENTROU\nUser: ${user.first_name}\nID: ${id}\nGrupo: ${chatId}\nHora: ${nowBR()}`);
-
-  delete conversations[id];
+  sendDiscord(
+    `✅ CLIENTE ENTROU NO GRUPO\n\n👤 ${user.first_name} (@${user.username})\n🆔 ${user.id}\n📦 ${product}\n🔑 ${key}\n🕒 ${nowBR()}`
+  );
 });
 
-console.log("🤖 BOT ONLINE — BASE ORIGINAL + LOG ENTRADA + DISCORD");
+console.log("🤖 BOT ONLINE — PAINEL ADMIN E KEYS FUNCIONAIS");
