@@ -1,7 +1,6 @@
 import TelegramBot from "node-telegram-bot-api";
 import sqlite3 from "sqlite3";
 import fs from "fs";
-import fetch from "node-fetch";
 
 /* ================= CONFIG ================= */
 
@@ -9,8 +8,7 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const MASTER_ADMIN = 8235876348;
 const LOG_GROUP_ID = -1003713776395;
 
-const DISCORD_WEBHOOK =
-  "https://discord.com/api/webhooks/1470577182442000405/RvRTTT_-Rn15U_urvxLSzFzQ_1lNN9TCOJk5VOJ0aB0RINA6ub9iLsmltslaalfY_SO2";
+const DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1470577182442000405/RvRTTT_-Rn15U_urvxLSzFzQ_1lNN9TCOJk5VOJ0aB0RINA6ub9iLsmltslaalfY_SO2";
 
 const PRODUCTS = {
   INJECT: { name: "💉 Inject Pack", group: -1003801083393 },
@@ -49,6 +47,18 @@ const isAdmin = (id, cb) => {
   if (id === MASTER_ADMIN) return cb(true);
   db.get(`SELECT id FROM admins WHERE id=?`, [id], (_, r) => cb(!!r));
 };
+
+async function sendDiscord(msg) {
+  try {
+    await fetch(DISCORD_WEBHOOK, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: msg })
+    });
+  } catch (e) {
+    console.log("Erro Discord:", e);
+  }
+}
 
 function logMsg(uid, sender, text) {
   if (!conversations[uid]) return;
@@ -92,20 +102,6 @@ ${c.joinTime || "NÃO ENTROU"}
   const path = `./log_${uid}_${Date.now()}.txt`;
   fs.writeFileSync(path, content);
   return path;
-}
-
-/* ================= DISCORD ================= */
-
-async function sendDiscord(msg) {
-  try {
-    await fetch(DISCORD_WEBHOOK, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: msg })
-    });
-  } catch (e) {
-    console.log("Erro Discord:", e);
-  }
 }
 
 /* ================= START ================= */
@@ -292,6 +288,7 @@ bot.on("message", (msg) => {
           caption: `❌ KEY INVÁLIDA\n👤 ${userName}\n🕒 ${nowBR()}`
         });
 
+        sendDiscord(`❌ KEY INVÁLIDA | ${userName} | ${text}`);
         return bot.sendMessage(msg.chat.id, "❌ Key inválida.");
       }
 
@@ -315,13 +312,15 @@ bot.on("message", (msg) => {
         caption: `✅ RESGATE CONCLUÍDO\n📦 ${product.name}\n👤 ${userName}\n🕒 ${nowBR()}`
       });
 
+      sendDiscord(`✅ RESGATE | ${userName} | ${text} | ${product.name}`);
+
       state[id] = null;
       delete conversations[id];
     });
   }
 });
 
-/* ================= GROUP JOIN LOG ================= */
+/* ================= JOIN LOG ================= */
 
 bot.on("chat_member", (u) => {
   const id = u.from?.id;
@@ -335,8 +334,8 @@ bot.on("chat_member", (u) => {
   const key = conversations[id].key || "N/A";
 
   sendDiscord(
-    `✅ CLIENTE ENTROU NO GRUPO\n\n👤 ${user.first_name} (@${user.username})\n🆔 ${user.id}\n📦 ${product}\n🔑 ${key}\n🕒 ${nowBR()}`
+    `🚨 CLIENTE ENTROU NO GRUPO\n👤 ${user.first_name} (@${user.username})\n🆔 ${user.id}\n📦 ${product}\n🔑 ${key}\n🕒 ${nowBR()}`
   );
 });
 
-console.log("🤖 BOT ONLINE — PAINEL ADMIN E KEYS FUNCIONAIS");
+console.log("🤖 BOT ONLINE — PAINEL ADMIN E DISCORD LOG ATIVO");
