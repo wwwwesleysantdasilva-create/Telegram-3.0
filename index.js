@@ -9,8 +9,8 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const MASTER_ADMIN = 8235876348;
 const LOG_GROUP_ID = -1003713776395;
 
-// 🔥 WEBHOOK DISCORD
-const DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1470577182442000405/RvRTTT_-Rn15U_urvxLSzFzQ_1lNN9TCOJk5VOJ0aB0RINA6ub9iLsmltslaalfY_SO2";
+// DISCORD WEBHOOK
+const DISCORD_WEBHOOK = "COLOQUE_AQUI_SEU_WEBHOOK";
 
 const PRODUCTS = {
   INJECT: { name: "💉 Inject Pack", group: -1003801083393 },
@@ -50,7 +50,6 @@ const isAdmin = (id, cb) => {
   db.get(`SELECT id FROM admins WHERE id=?`, [id], (_, r) => cb(!!r));
 };
 
-// Discord webhook sender
 function sendDiscord(msg) {
   fetch(DISCORD_WEBHOOK, {
     method: "POST",
@@ -293,7 +292,7 @@ bot.on("message", (msg) => {
       });
 
       state[id] = null;
-      // NÃO apagar conversation aqui
+      // NÃO deletar conversation aqui
     });
   }
 });
@@ -321,4 +320,4 @@ bot.on("chat_member", (u) => {
   delete conversations[id];
 });
 
-console.log("🤖 BOT ONLINE — BASE ORIGINAL + LOG DE ENTRADA + DISCORD");
+console.log("🤖 BOT ONLINE — BASE ORIGINAL + WEBHOOK DISCORD + LOG DE ENTRADA");
