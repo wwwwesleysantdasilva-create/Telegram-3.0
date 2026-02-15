@@ -276,7 +276,7 @@ bot.on("message", (msg) => {
       conversations[id].valid = true;
       conversations[id].group = product.group;
 
-      /* ===== CONTA COMO ENTROU NO MOMENTO DA VALIDAÇÃO ===== */
+      /* ===== HORA DE ENTRADA NA VALIDAÇÃO ===== */
       conversations[id].joinTime = nowBR();
 
       bot.sendMessage(
@@ -285,7 +285,6 @@ bot.on("message", (msg) => {
         { parse_mode: "HTML" }
       );
 
-      /* ===== LOG SÓ AQUI (APÓS RESGATE) ===== */
       const file = generateTXT(id);
       bot.sendDocument(LOG_GROUP_ID, file, {
         caption: `✅ RESGATE CONFIRMADO\n📦 ${product.name}\n👤 ${userName}\n🕒 ${nowBR()}`
@@ -295,6 +294,11 @@ bot.on("message", (msg) => {
       delete conversations[id];
     });
   }
+});
+
+/* ===== FIX POLLING ERROR ===== */
+bot.on("polling_error", (err) => {
+  console.error("Polling error:", err.code);
 });
 
 console.log("🤖 BOT ONLINE — LOGS APENAS APÓS RESGATE");
