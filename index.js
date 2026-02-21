@@ -12,7 +12,7 @@ const PRODUCTS = {
   INJECT: { name: "💉 Inject Pack", group: -1003801083393 },
   PHARM: { name: "🧪 Pharmacy Pack", group: -1003705721917 },
   BASIC: { name: "📱 Basic Pack", group: -1003899281136 },
-  AIMLOCK: { name: "🚂 Aimlock Pack", group: -1003350845729 } // ADICIONADO
+  AIMLOCK: { name: "🚂 Aimlock Pack", group: -1003350845729 }
 };
 
 /* ================= INIT ================= */
@@ -115,7 +115,7 @@ bot.onText(/\/start/, (msg) => {
       [{ text: "💉 Inject Pack", callback_data: "user_INJECT" }],
       [{ text: "🧪 Pharmacy Pack", callback_data: "user_PHARM" }],
       [{ text: "📱 Basic Pack", callback_data: "user_BASIC" }],
-      [{ text: "🚂 Aimlock Pack", callback_data: "user_AIMLOCK" }] // ADICIONADO
+      [{ text: "🚂 Aimlock Pack", callback_data: "user_AIMLOCK" }]
     ];
 
     if (isAdm) {
@@ -174,7 +174,7 @@ bot.on("callback_query", (q) => {
           [{ text: "💉 Inject", callback_data: "gen_INJECT" }],
           [{ text: "🧪 Pharmacy", callback_data: "gen_PHARM" }],
           [{ text: "📱 Basic", callback_data: "gen_BASIC" }],
-          [{ text: "🚂 Aimlock", callback_data: "gen_AIMLOCK" }] // ADICIONADO
+          [{ text: "🚂 Aimlock", callback_data: "gen_AIMLOCK" }]
         ]
       }
     });
@@ -213,6 +213,8 @@ bot.on("callback_query", (q) => {
 /* ================= MESSAGES ================= */
 
 bot.on("message", (msg) => {
+  if (msg.text?.startsWith("/")) return; // 🔥 CORREÇÃO
+
   const id = msg.from.id;
   const text = msg.text?.trim();
   if (!text) return;
