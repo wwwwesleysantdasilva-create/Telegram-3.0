@@ -11,8 +11,8 @@ const LOG_GROUP_ID = -1003713776395;
 const PRODUCTS = {
   INJECT: { name: "💉 Inject Pack", group: -1003801083393 },
   PHARM: { name: "🧪 Pharmacy Pack", group: -1003705721917 },
-  BASIC: { name: "📱 Basic Pack", group: -1003899281136 }
-  AIMLOCK: { name: "🚂 Aimlock Pack", group: -1003350845729}
+  BASIC: { name: "📱 Basic Pack", group: -1003899281136 },
+  AIMLOCK: { name: "🚂 Aimlock Pack", group: -1003350845729 } // ADICIONADO
 };
 
 /* ================= INIT ================= */
@@ -114,7 +114,8 @@ bot.onText(/\/start/, (msg) => {
     const keyboard = [
       [{ text: "💉 Inject Pack", callback_data: "user_INJECT" }],
       [{ text: "🧪 Pharmacy Pack", callback_data: "user_PHARM" }],
-      [{ text: "📱 Basic Pack", callback_data: "user_BASIC" }]
+      [{ text: "📱 Basic Pack", callback_data: "user_BASIC" }],
+      [{ text: "🚂 Aimlock Pack", callback_data: "user_AIMLOCK" }] // ADICIONADO
     ];
 
     if (isAdm) {
@@ -172,8 +173,8 @@ bot.on("callback_query", (q) => {
         inline_keyboard: [
           [{ text: "💉 Inject", callback_data: "gen_INJECT" }],
           [{ text: "🧪 Pharmacy", callback_data: "gen_PHARM" }],
-          [{ text: "📱 Basic", callback_data: "gen_BASIC" }]
-         [{ text: "🚂 aimlock", callback_data: "gen_AIMLOCK" }]
+          [{ text: "📱 Basic", callback_data: "gen_BASIC" }],
+          [{ text: "🚂 Aimlock", callback_data: "gen_AIMLOCK" }] // ADICIONADO
         ]
       }
     });
@@ -256,7 +257,6 @@ bot.on("message", (msg) => {
     );
   }
 
-  /* ===== VALIDAR KEY ===== */
   if (state[id]?.step === "await_key") {
     const productKey = state[id].product;
     const product = PRODUCTS[productKey];
@@ -277,8 +277,6 @@ bot.on("message", (msg) => {
 
       conversations[id].valid = true;
       conversations[id].group = product.group;
-
-      /* ===== HORA DE ENTRADA NA VALIDAÇÃO ===== */
       conversations[id].joinTime = nowBR();
 
       bot.sendMessage(
