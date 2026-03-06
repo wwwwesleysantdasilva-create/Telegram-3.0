@@ -11,7 +11,7 @@ const LOG_GROUP_ID = -1003713776395;
 const PRODUCTS = {
   INJECT: { name: "💉 Inject Pack", group: -1003801083393 },
   PHARM: { name: "🧪 Pharmacy Pack", group: -1003705721917 },
-  BASIC: { name: "📱 Basic Pack", group: -1003899281136 },
+  
   AIMLOCK: { name: "🚂 Aimlock Pack", group: -1003350845729 }
 };
 
