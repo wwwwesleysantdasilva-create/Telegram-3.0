@@ -120,12 +120,15 @@ bot.onText(/\/start/, (msg) => {
       keyboard.push([{ text: "🛠 Painel Admin", callback_data: "admin_panel" }]);
     }
 
-    bot.sendMessage(
+    bot.sendPhoto(
       msg.chat.id,
-      "👋 <b>Olá, seja bem-vindo!</b>\n\nEscolha uma opção:",
+      "https://i.postimg.cc/W1NDCw6q/IMG-1167.jpg",
       {
+        caption: "👋 <b>Olá, seja bem-vindo!</b>\n\nEscolha uma opção:",
         parse_mode: "HTML",
-        reply_markup: { inline_keyboard: keyboard }
+        reply_markup: {
+          inline_keyboard: keyboard
+        }
       }
     );
   });
