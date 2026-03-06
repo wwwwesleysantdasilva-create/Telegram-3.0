@@ -91,7 +91,6 @@ ${c.joinTime || "NÃO ENTROU"}
 }
 
 /* ================= START ================= */
-/* ================= START ================= */
 
 bot.onText(/\/start/, (msg) => {
   const id = msg.from.id;
@@ -122,14 +121,17 @@ bot.onText(/\/start/, (msg) => {
     }
 
     bot.sendPhoto(
-  msg.chat.id,
-  "https://cdn.discordapp.com/attachments/1457915880481624094/1474726428254797834/IMG_1167.jpg",
-  {
-    caption: "👋 <b>Olá, seja bem-vindo!</b>\n\nEscolha uma opção:",
-    parse_mode: "HTML",
-    reply_markup: { inline_keyboard: keyboard }
-  }
-);
+      msg.chat.id,
+      "https://cdn.discordapp.com/attachments/1457915880481624094/1474726428254797834/IMG_1167.jpg",
+      {
+        caption: "👋 <b>Olá, seja bem-vindo!</b>\n\nEscolha uma opção:",
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard: keyboard }
+      }
+    );
+  });
+});
+
 /* ================= CALLBACKS ================= */
 
 bot.on("callback_query", (q) => {
@@ -170,7 +172,6 @@ bot.on("callback_query", (q) => {
         inline_keyboard: [
           [{ text: "💉 Inject", callback_data: "gen_INJECT" }],
           [{ text: "🧪 Pharmacy", callback_data: "gen_PHARM" }],
-          [{ text: "📱 Basic", callback_data: "gen_BASIC" }],
           [{ text: "🚂 Aimlock", callback_data: "gen_AIMLOCK" }]
         ]
       }
@@ -210,7 +211,7 @@ bot.on("callback_query", (q) => {
 /* ================= MESSAGES ================= */
 
 bot.on("message", (msg) => {
-  if (msg.text?.startsWith("/")) return; // 🔥 CORREÇÃO
+  if (msg.text?.startsWith("/")) return;
 
   const id = msg.from.id;
   const text = msg.text?.trim();
@@ -296,6 +297,7 @@ bot.on("message", (msg) => {
 });
 
 /* ===== FIX POLLING ERROR ===== */
+
 bot.on("polling_error", (err) => {
   console.log(err);
 });
