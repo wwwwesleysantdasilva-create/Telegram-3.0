@@ -125,16 +125,30 @@ const startPhoto = fs.existsSync("./start_photo.txt")
   ? fs.readFileSync("./start_photo.txt", "utf8")
   : null;
 
+const fs = require('fs');
+
+// Lê o conteúdo do arquivo, se existir
+const startPhoto = fs.existsSync("./start_photo.txt")
+  ? fs.readFileSync("./start_photo.txt", "utf8").trim()
+  : null;
+
+// Se houver uma foto válida, envia; senão, apenas envia a mensagem sem foto
 if (startPhoto) {
   bot.sendPhoto(msg.chat.id, startPhoto, {
-        caption: "🍷 <b>Olá, seja bem-vindo, Aqui Vocês irá resgatar seu Pack !!</b>\n\nEscolha uma opção:",
-        parse_mode: "HTML",
-        reply_markup: {
-          inline_keyboard: keyboard
-        }
-      }
-    );
+    caption: "🍷 <b>Olá, seja bem-vindo! Aqui vocês irão resgatar seu Pack!</b>\n\nEscolha uma opção:",
+    parse_mode: "HTML",
+    reply_markup: {
+      inline_keyboard: keyboard
+    }
+  }).catch(err => console.error("Erro ao enviar foto:", err));
+} else {
+  bot.sendMessage(msg.chat.id, "🍷 <b>Olá, seja bem-vindo! Aqui vocês irão resgatar seu Pack!</b>\n\nEscolha uma opção:", {
+    parse_mode: "HTML",
+    reply_markup: {
+      inline_keyboard: keyboard
+    }
   });
+}
 
 /* ================= CALLBACKS ================= */
 
