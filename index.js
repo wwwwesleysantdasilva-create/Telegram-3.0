@@ -1,3 +1,4 @@
+
 import TelegramBot from "node-telegram-bot-api";
 import sqlite3 from "sqlite3";
 import fs from "fs";
@@ -119,27 +120,20 @@ bot.onText(/\/start/, (msg) => {
     if (isAdm) {
       keyboard.push([{ text: "🛠 Painel Admin", callback_data: "admin_panel" }]);
     }
+    
+const startPhoto = fs.existsSync("./start_photo.txt")
+  ? fs.readFileSync("./start_photo.txt", "utf8")
+  : null;
 
-    const startPhoto = fs.existsSync("./start_photo.txt")
-      ? fs.readFileSync("./start_photo.txt", "utf8")
-      : null;
-
-    if (startPhoto) {
-      bot.sendPhoto(msg.chat.id, startPhoto, {
+if (startPhoto) {
+  bot.sendPhoto(msg.chat.id, startPhoto, {
         caption: "👋 <b>Olá, seja bem-vindo!</b>\n\nEscolha uma opção:",
         parse_mode: "HTML",
-        reply_markup: { inline_keyboard: keyboard }
-      });
-    } else {
-      bot.sendMessage(
-        msg.chat.id,
-        "👋 <b>Olá, seja bem-vindo!</b>\n\nEscolha uma opção:",
-        {
-          parse_mode: "HTML",
-          reply_markup: { inline_keyboard: keyboard }
+        reply_markup: {
+          inline_keyboard: keyboard
         }
-      );
-    }
+      }
+    );
   });
 });
 
@@ -153,12 +147,17 @@ bot.on("callback_query", (q) => {
   if (q.data === "admin_panel") {
     return isAdmin(id, (ok) => {
       if (!ok) return;
+      
+if (q.data === "admin_start_img") {
+  if (id !== MASTER_ADMIN) return;
+  state[id] = { step: "await_start_photo" };
 
+  return bot.sendMessage(chat, "📷 Envie a foto para usar no /start");
+}
       state[id] = null;
 
       const buttons = [
-        [{ text: "🔑 Gerar Keys", callback_data: "admin_gen" }],
-        [{ text: "🖼 Definir imagem start", callback_data: "admin_start_img" }]
+        [{ text: "🔑 Gerar Keys", callback_data: "admin_gen" }]
       ];
 
       if (id === MASTER_ADMIN) {
@@ -175,12 +174,6 @@ bot.on("callback_query", (q) => {
 
       logMsg(id, "🤖 BOT", "Painel admin aberto");
     });
-  }
-
-  if (q.data === "admin_start_img") {
-    if (id !== MASTER_ADMIN) return;
-    state[id] = { step: "await_start_photo" };
-    return bot.sendMessage(chat, "📷 Envie a foto para usar no /start");
   }
 
   if (q.data === "admin_gen") {
@@ -229,27 +222,24 @@ bot.on("callback_query", (q) => {
 /* ================= MESSAGES ================= */
 
 bot.on("message", (msg) => {
-  if (msg.text?.startsWith("/")) return;
+  if (msg.text?.startsWith("/")) return; // 🔥 CORREÇÃO
 
   const id = msg.from.id;
   const text = msg.text?.trim();
-  if (!text && !msg.photo) return;
-
-  const userName = msg.from.first_name || "Usuário";
-
+  if (!text) return;
+  
   if (state[id]?.step === "await_start_photo" && msg.photo) {
 
-    const photo = msg.photo[msg.photo.length - 1].file_id;
+  const photo = msg.photo[msg.photo.length - 1].file_id;
 
-    fs.writeFileSync("./start_photo.txt", photo);
+  fs.writeFileSync("./start_photo.txt", photo);
 
-    state[id] = null;
+  state[id] = null;
 
-    return bot.sendMessage(msg.chat.id, "✅ Imagem do /start salva!");
-  }
+  return bot.sendMessage(msg.chat.id, "✅ Imagem do /start salva!");
+}
 
-  if (!text) return;
-
+  const userName = msg.from.first_name || "Usuário";
   logMsg(id, `👤 ${userName}`, text);
 
   if (state[id]?.step === "add_admin" && id === MASTER_ADMIN) {
