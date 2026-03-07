@@ -127,7 +127,7 @@ const startPhoto = fs.existsSync("./start_photo.txt")
 
 if (startPhoto) {
   bot.sendPhoto(msg.chat.id, startPhoto, {
-        caption: "👋 <b>Olá, seja bem-vindo!</b>\n\nEscolha uma opção:",
+        caption: "🍷 <b>Olá, seja bem-vindo, Aqui Vocês irá resgatar seu Pack !!</b>\n\nEscolha uma opção:",
         parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: keyboard
@@ -162,7 +162,7 @@ if (q.data === "admin_start_img") {
 
       if (id === MASTER_ADMIN) {
         buttons.push(
-          [{ text: "🖼 Definir imagem start", callback_data: "admin_start_img" }]
+          [{ text: "📷 Definir imagem start", callback_data: "admin_start_img" }]
           [{ text: "➕ Add Admin", callback_data: "admin_add" }],
           [{ text: "➖ Remover Admin", callback_data: "admin_remove" }]
         );
