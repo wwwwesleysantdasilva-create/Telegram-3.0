@@ -119,6 +119,28 @@ bot.onText(/\/start/, (msg) => {
     if (isAdm) {
       keyboard.push([{ text: "🛠 Painel Admin", callback_data: "admin_panel" }]);
     }
+
+    const startPhoto = fs.existsSync("./start_photo.txt")
+      ? fs.readFileSync("./start_photo.txt", "utf8")
+      : null;
+
+    if (startPhoto) {
+      bot.sendPhoto(msg.chat.id, startPhoto, {
+        caption: "👋 <b>Olá, seja bem-vindo!</b>\n\nEscolha uma opção:",
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard: keyboard }
+      });
+    } else {
+      bot.sendMessage(
+        msg.chat.id,
+        "👋 <b>Olá, seja bem-vindo!</b>\n\nEscolha uma opção:",
+        {
+          parse_mode: "HTML",
+          reply_markup: { inline_keyboard: keyboard }
+        }
+      );
+    }
+  });
 });
 
 /* ================= CALLBACKS ================= */
@@ -135,7 +157,8 @@ bot.on("callback_query", (q) => {
       state[id] = null;
 
       const buttons = [
-        [{ text: "🔑 Gerar Keys", callback_data: "admin_gen" }]
+        [{ text: "🔑 Gerar Keys", callback_data: "admin_gen" }],
+        [{ text: "🖼 Definir imagem start", callback_data: "admin_start_img" }]
       ];
 
       if (id === MASTER_ADMIN) {
@@ -152,6 +175,12 @@ bot.on("callback_query", (q) => {
 
       logMsg(id, "🤖 BOT", "Painel admin aberto");
     });
+  }
+
+  if (q.data === "admin_start_img") {
+    if (id !== MASTER_ADMIN) return;
+    state[id] = { step: "await_start_photo" };
+    return bot.sendMessage(chat, "📷 Envie a foto para usar no /start");
   }
 
   if (q.data === "admin_gen") {
@@ -204,9 +233,23 @@ bot.on("message", (msg) => {
 
   const id = msg.from.id;
   const text = msg.text?.trim();
-  if (!text) return;
+  if (!text && !msg.photo) return;
 
   const userName = msg.from.first_name || "Usuário";
+
+  if (state[id]?.step === "await_start_photo" && msg.photo) {
+
+    const photo = msg.photo[msg.photo.length - 1].file_id;
+
+    fs.writeFileSync("./start_photo.txt", photo);
+
+    state[id] = null;
+
+    return bot.sendMessage(msg.chat.id, "✅ Imagem do /start salva!");
+  }
+
+  if (!text) return;
+
   logMsg(id, `👤 ${userName}`, text);
 
   if (state[id]?.step === "add_admin" && id === MASTER_ADMIN) {
@@ -283,11 +326,6 @@ bot.on("message", (msg) => {
       delete conversations[id];
     });
   }
-});
-
-/* ===== PEGAR FILE_ID DA IMAGEM ===== */
-bot.on("photo", (msg) => {
-  console.log(msg.photo);
 });
 
 /* ===== FIX POLLING ERROR ===== */
