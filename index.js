@@ -1,12 +1,15 @@
 import TelegramBot from "node-telegram-bot-api";
 import sqlite3 from "sqlite3";
 import fs from "fs";
+import express from "express";
 
 /* ================= CONFIG ================= */
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const MASTER_ADMIN = 8235876348;
 const LOG_GROUP_ID = -1003713776395;
+const PORT = process.env.PORT || 3000;
+const URL_BOT = process.env.URL_BOT; // URL pública do Railway, ex: https://meuapp.up.railway.app
 
 const PRODUCTS = {
   INJECT: { name: "💉 Inject Pack", group: -1003801083393 },
@@ -16,9 +19,8 @@ const PRODUCTS = {
 
 /* ================= INIT ================= */
 
-const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+const bot = new TelegramBot(BOT_TOKEN);
 const db = new sqlite3.Database("./database.sqlite");
-
 let state = {};
 let conversations = {};
 
@@ -95,8 +97,25 @@ ${c.joinTime || "NÃO ENTROU"}
   return path;
 }
 
-/* ================= START ================= */
+/* ================= EXPRESS / WEBHOOK ================= */
 
+const app = express();
+app.use(express.json());
+
+bot.setWebHook(`${URL_BOT}/bot${BOT_TOKEN}`);
+
+app.post(`/bot${BOT_TOKEN}`, (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
+});
+
+app.listen(PORT, () => {
+  console.log(`🤖 BOT ONLINE — Webhook rodando na porta ${PORT}`);
+});
+
+/* ================= BOT LOGIC ================= */
+
+// /start
 bot.onText(/\/start/, (msg) => {
   const id = msg.from.id;
   const userName = msg.from.first_name || "Usuário";
@@ -138,15 +157,14 @@ bot.onText(/\/start/, (msg) => {
           "🍷 <b>Olá, seja bem-vindo! Aqui vocês irão resgatar seu Pack!</b>\n\nEscolha uma opção:",
         parse_mode: "HTML",
         reply_markup: { inline_keyboard: keyboard }
-      }).catch((err) => {
-        console.error("Erro ao enviar foto:", err);
-        bot.sendMessage(msg.chat.id, "🍷 <b>Olá, seja bem-vindo! Aqui vocês irão resgatar seu Pack!</b>\n\nEscolha uma opção:", {
+      }).catch(() => {
+        bot.sendMessage(msg.chat.id, "🍷 <b>Olá, seja bem-vindo!</b>\nEscolha uma opção:", {
           parse_mode: "HTML",
           reply_markup: { inline_keyboard: keyboard }
         });
       });
     } else {
-      bot.sendMessage(msg.chat.id, "🍷 <b>Olá, seja bem-vindo! Aqui vocês irão resgatar seu Pack!</b>\n\nEscolha uma opção:", {
+      bot.sendMessage(msg.chat.id, "🍷 <b>Olá, seja bem-vindo!</b>\nEscolha uma opção:", {
         parse_mode: "HTML",
         reply_markup: { inline_keyboard: keyboard }
       });
@@ -154,14 +172,12 @@ bot.onText(/\/start/, (msg) => {
   });
 });
 
-/* ================= CALLBACKS ================= */
-
+// CALLBACKS
 bot.on("callback_query", (q) => {
   const id = q.from.id;
   const chat = q.message.chat.id;
   const userName = q.from.first_name || "Usuário";
 
-  // Callback geral
   switch (q.data) {
     case "admin_panel":
       return isAdmin(id, (ok) => {
@@ -216,7 +232,6 @@ bot.on("callback_query", (q) => {
       return bot.sendMessage(chat, "Envie o ID do admin para remover:");
 
     default:
-      // callbacks de usuário ou geração
       if (q.data.startsWith("gen_")) {
         state[id] = { step: "gen_qty", product: q.data.replace("gen_", "") };
         return bot.sendMessage(chat, "Quantas keys deseja gerar?");
@@ -224,11 +239,10 @@ bot.on("callback_query", (q) => {
       if (q.data.startsWith("user_")) {
         const product = q.data.replace("user_", "");
         state[id] = { step: "await_key", product };
-
         conversations[id].product = PRODUCTS[product];
         logMsg(id, `👤 ${userName}`, PRODUCTS[product].name);
 
-        return bot.sendMessage(chat, `📦 <b>${PRODUCTS[product].name}</b>\n\nEnvie sua <b>KEY</b>:`, {
+        return bot.sendMessage(chat, `📦 <b>${PRODUCTS[product].name}</b>\nEnvie sua <b>KEY</b>:`, {
           parse_mode: "HTML"
         });
       }
@@ -236,50 +250,45 @@ bot.on("callback_query", (q) => {
   }
 });
 
-/* ================= MESSAGES ================= */
-
+// MESSAGES
 bot.on("message", async (msg) => {
-  if (msg.text?.startsWith("/")) return; // Ignora comandos
-
   const id = msg.from.id;
+  const chat = msg.chat.id;
   const text = msg.text?.trim();
   const userName = msg.from.first_name || "Usuário";
 
   if (!text && !msg.photo) return;
-
   logMsg(id, `👤 ${userName}`, text || "📷 Foto enviada");
 
-  // Receber imagem do painel
+  // Receber foto do painel
   if (state[id]?.step === "await_start_photo" && msg.photo) {
     const photoId = msg.photo[msg.photo.length - 1].file_id;
     fs.writeFileSync("./start_photo.txt", photoId);
     state[id] = null;
-    return bot.sendMessage(msg.chat.id, "✅ Imagem do /start salva!");
+    return bot.sendMessage(chat, "✅ Imagem do /start salva!");
   }
 
-  // Adicionar admin
+  // Add admin
   if (state[id]?.step === "add_admin" && id === MASTER_ADMIN) {
     db.run(`INSERT OR IGNORE INTO admins VALUES (?)`, [Number(text)]);
     state[id] = null;
-    return bot.sendMessage(msg.chat.id, "✅ Admin adicionado.");
+    return bot.sendMessage(chat, "✅ Admin adicionado.");
   }
 
-  // Remover admin
+  // Remove admin
   if (state[id]?.step === "remove_admin" && id === MASTER_ADMIN) {
     db.run(`DELETE FROM admins WHERE id=?`, [Number(text)]);
     state[id] = null;
-    return bot.sendMessage(msg.chat.id, "✅ Admin removido.");
+    return bot.sendMessage(chat, "✅ Admin removido.");
   }
 
   // Gerar keys
   if (state[id]?.step === "gen_qty") {
     const qty = parseInt(text);
-    if (!qty || qty < 1 || qty > 100)
-      return bot.sendMessage(msg.chat.id, "❌ Quantidade inválida.");
+    if (!qty || qty < 1 || qty > 100) return bot.sendMessage(chat, "❌ Quantidade inválida.");
 
     const prefix = state[id].product;
     let keys = [];
-
     for (let i = 0; i < qty; i++) {
       const key = genKey(prefix);
       keys.push(key);
@@ -287,44 +296,38 @@ bot.on("message", async (msg) => {
     }
 
     state[id] = null;
-    return bot.sendMessage(
-      msg.chat.id,
-      `✅ Keys geradas:\n\n<pre>${keys.join("\n")}</pre>`,
-      { parse_mode: "HTML" }
-    );
+    return bot.sendMessage(chat, `✅ Keys geradas:\n\n<pre>${keys.join("\n")}</pre>`, {
+      parse_mode: "HTML"
+    });
   }
 
   // Resgate de key
   if (state[id]?.step === "await_key") {
     const productKey = state[id].product;
     const product = PRODUCTS[productKey];
-
     conversations[id].key = text;
 
     db.get(`SELECT * FROM keys WHERE key=?`, [text], async (_, row) => {
       if (!row || row.used || row.product !== productKey) {
         conversations[id].valid = false;
-        return bot.sendMessage(msg.chat.id, "❌ Key inválida.");
+        return bot.sendMessage(chat, "❌ Key inválida.");
       }
 
       let invite;
       try {
         invite = await bot.createChatInviteLink(product.group, { member_limit: 1 });
-      } catch (err) {
-        return bot.sendMessage(msg.chat.id, "❌ Erro ao criar link, contate o admin.");
+      } catch {
+        return bot.sendMessage(chat, "❌ Erro ao criar link, contate o admin.");
       }
 
       db.run(`UPDATE keys SET used=1 WHERE key=?`, [text]);
-
       conversations[id].valid = true;
       conversations[id].group = product.group;
       conversations[id].joinTime = nowBR();
 
-      bot.sendMessage(
-        msg.chat.id,
-        `✅ <b>Resgate concluído!</b>\n\n${invite.invite_link}`,
-        { parse_mode: "HTML" }
-      );
+      bot.sendMessage(chat, `✅ <b>Resgate concluído!</b>\n\n${invite.invite_link}`, {
+        parse_mode: "HTML"
+      });
 
       const file = generateTXT(id);
       bot.sendDocument(LOG_GROUP_ID, file, {
@@ -337,7 +340,5 @@ bot.on("message", async (msg) => {
   }
 });
 
-/* ===== FIX POLLING ERROR ===== */
-bot.on("polling_error", (err) => console.error("Polling error:", err));
-
-console.log("🤖 BOT ONLINE — LOGS APENAS APÓS RESGATE");
+// Polling error fallback
+bot.on("polling_error", (err) => console.error("Polling error:", err.code));
