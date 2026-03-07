@@ -162,6 +162,7 @@ if (q.data === "admin_start_img") {
 
       if (id === MASTER_ADMIN) {
         buttons.push(
+          [{ text: "🖼 Definir imagem start", callback_data: "admin_start_img" }]
           [{ text: "➕ Add Admin", callback_data: "admin_add" }],
           [{ text: "➖ Remover Admin", callback_data: "admin_remove" }]
         );
