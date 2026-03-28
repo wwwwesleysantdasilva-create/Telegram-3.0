@@ -26,7 +26,6 @@ db.serialize(() => {
     used INTEGER DEFAULT 0
   )`);
   
-  // Tabela de Produtos limpa, sem recadastrar os antigos!
   db.run(`CREATE TABLE IF NOT EXISTS products (
     id TEXT UNIQUE,
     name TEXT,
@@ -91,27 +90,32 @@ ${c.joinTime || "NÃO ENTROU"}
   return path;
 }
 
+// TRAVA DE SEGURANÇA: Função para garantir que a memória do usuário existe
+function garantirMemoria(id, fromUser) {
+  if (!conversations[id]) {
+    conversations[id] = {
+      user: fromUser,
+      product: null,
+      key: null,
+      valid: null,
+      group: null,
+      joinTime: null,
+      messages: []
+    };
+  }
+}
+
 /* ================= START ================= */
 
 bot.onText(/\/start/, (msg) => {
   const id = msg.from.id;
   const userName = msg.from.first_name || "Usuário";
 
-  conversations[id] = {
-    user: msg.from,
-    product: null,
-    key: null,
-    valid: null,
-    group: null,
-    joinTime: null,
-    messages: []
-  };
-
+  garantirMemoria(id, msg.from);
   state[id] = null;
   logMsg(id, `👤 ${userName}`, "/start");
 
   isAdmin(id, (isAdm) => {
-    // Lendo os produtos do banco de dados para montar os botões do cliente
     db.all(`SELECT * FROM products`, [], (err, products) => {
       const keyboard = [];
       
@@ -146,6 +150,9 @@ bot.on("callback_query", (q) => {
   const chat = q.message.chat.id;
   const userName = q.from.first_name || "Usuário";
 
+  // Aplica a trava de segurança antes de fazer qualquer coisa
+  garantirMemoria(id, q.from);
+
   if (q.data === "admin_panel") {
     return isAdmin(id, (ok) => {
       if (!ok) return;
@@ -174,15 +181,13 @@ bot.on("callback_query", (q) => {
     });
   }
 
-  // BOTÕES DO NOVO SISTEMA DE PRODUTOS
   if (q.data === "admin_add_prod") {
     state[id] = { step: "add_prod_id" };
     return bot.sendMessage(chat, "<b>PASSO 1/3</b>\n\nDigite um código curto para o bot identificar o produto (sem espaços).\n<i>Exemplo: SENSI, MACRO, VIP</i>", { parse_mode: "HTML" });
   }
 
-  // NOVO SISTEMA DE REMOVER PRODUTO POR BOTÃO (MUITO MELHOR!)
   if (q.data === "admin_rem_prod") {
-    state[id] = null; // Zera o estado para não bugar
+    state[id] = null;
     db.all(`SELECT * FROM products`, [], (err, products) => {
       if (products.length === 0) return bot.sendMessage(chat, "❌ Nenhum produto cadastrado no momento.");
       
@@ -196,7 +201,6 @@ bot.on("callback_query", (q) => {
     return;
   }
 
-  // DELETANDO O PRODUTO CLICADO
   if (q.data.startsWith("delprod_")) {
     const prodId = q.data.replace("delprod_", "");
     db.run(`DELETE FROM products WHERE id=?`, [prodId]);
@@ -206,7 +210,6 @@ bot.on("callback_query", (q) => {
   if (q.data === "admin_gen") {
     state[id] = { step: "gen_choose" };
     
-    // Lê o banco para montar os botões de gerar keys
     db.all(`SELECT * FROM products`, [], (err, products) => {
       if (products.length === 0) return bot.sendMessage(chat, "❌ Adicione um produto primeiro no Painel Admin.");
 
@@ -266,11 +269,13 @@ bot.on("message", (msg) => {
   if (!text) return;
 
   const userName = msg.from.first_name || "Usuário";
+  
+  // Aplica a trava de segurança antes de fazer qualquer coisa
+  garantirMemoria(id, msg.from);
   logMsg(id, `👤 ${userName}`, text);
 
-  // LÓGICA DE CADASTRO DE PRODUTO PASSO A PASSO
   if (state[id]?.step === "add_prod_id") {
-    state[id].tempId = text.toUpperCase().replace(/[^A-Z0-9_]/g, ""); // Remove espaços e caracteres estranhos
+    state[id].tempId = text.toUpperCase().replace(/[^A-Z0-9_]/g, "");
     state[id].step = "add_prod_name";
     return bot.sendMessage(msg.chat.id, "<b>PASSO 2/3</b>\n\nQual o NOME do produto que vai aparecer no botão para o cliente?\n<i>Exemplo: 💎 Pack Sensi VIP</i>", { parse_mode: "HTML" });
   }
@@ -291,7 +296,6 @@ bot.on("message", (msg) => {
     return;
   }
 
-  // RESTANTE DA LÓGICA
   if (state[id]?.step === "add_admin" && id === MASTER_ADMIN) {
     db.run(`INSERT OR IGNORE INTO admins VALUES (?)`, [Number(text)]);
     state[id] = null;
@@ -339,7 +343,6 @@ bot.on("message", (msg) => {
         return bot.sendMessage(msg.chat.id, "❌ Key inválida ou já utilizada.");
       }
 
-      // Pega o grupo do produto direto do banco
       db.get(`SELECT * FROM products WHERE id=?`, [productKey], async (err, product) => {
         if (!product) return bot.sendMessage(msg.chat.id, "❌ Erro: Este produto não está mais disponível.");
 
@@ -380,4 +383,4 @@ bot.on("polling_error", (err) => {
   console.error("Polling error:", err.code);
 });
 
-console.log("🤖 BOT ONLINE — PAINEL DE PRODUTOS DINÂMICOS 2.0 ATIVADO");
+console.log("🤖 BOT ONLINE — MEMÓRIA BLINDADA CONTRA REBOOTS");
